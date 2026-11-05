@@ -1,0 +1,424 @@
+// Servidor do Cassino da Madeira. Sem dependências: basta Node 20 ou mais recente.
+// Guarda o baralho e as mãos, valida cada jogada e só envia a cada jogador o que ele pode ver.
+'use strict';
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const E = require('../shared/engine.js');
+const B = require('../shared/bots.js');
+
+const PORT = +process.env.PORT || 3000;
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+const MAX_ROOMS = +process.env.MAX_ROOMS || 300;
+const BOT_DELAY = +process.env.BOT_DELAY_MS || 1200;
+const OFFLINE_GRACE = +process.env.OFFLINE_GRACE_MS || 30000; // quanto se espera por quem perdeu a ligação
+const HOST_GRACE = +process.env.HOST_GRACE_MS || 20000;
+const NEXT_ROUND_WAIT = +process.env.NEXT_ROUND_MS || 45000;
+const EMPTY_ROOM_TTL = +process.env.EMPTY_ROOM_MS || 10 * 60000;
+const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const BOT_NICKS = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil'];
+
+const rng = () => crypto.randomInt(0, 2 ** 32) / 2 ** 32;
+const rooms = new Map();
+
+// --- Utilitários ---------------------------------------------------------
+class HttpError extends Error {
+  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
+}
+const clean = (s, max) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f​-‏‪-‮⁠-⁩﻿]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const newToken = () => crypto.randomBytes(24).toString('base64url');
+function newCode() {
+  for (let t = 0; t < 50; t++) {
+    let c = '';
+    for (let i = 0; i < 5; i++) c += ALPHABET[crypto.randomInt(ALPHABET.length)];
+    if (!rooms.has(c)) return c;
+  }
+  throw new HttpError(503, 'O servidor está cheio. Tenta daqui a pouco.');
+}
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  return { salt, hash: crypto.scryptSync(pw, salt, 32) };
+}
+function checkPassword(room, pw) {
+  const h = crypto.scryptSync(String(pw || ''), room.pass.salt, 32);
+  return crypto.timingSafeEqual(h, room.pass.hash);
+}
+
+// Limites por endereço
+const buckets = new Map();
+function allow(key, perMin, burst) {
+  const now = Date.now();
+  let b = buckets.get(key);
+  if (!b) { b = { n: burst, t: now }; buckets.set(key, b); }
+  b.n = Math.min(burst, b.n + (now - b.t) / 60000 * perMin);
+  b.t = now;
+  if (b.n < 1) return false;
+  b.n--;
+  return true;
+}
+setInterval(() => { const lim = Date.now() - 15 * 60000; for (const [k, b] of buckets) if (b.t < lim) buckets.delete(k); }, 5 * 60000).unref();
+function ipOf(req) {
+  if (TRUST_PROXY) { const f = req.headers['x-forwarded-for']; if (f) return String(f).split(',')[0].trim(); }
+  return req.socket.remoteAddress || '?';
+}
+
+// --- Salas ------------------------------------------------------------------
+function makePlayer(nick) {
+  return { id: crypto.randomUUID(), token: newToken(), nick, isBot: false, level: null, stream: null, connected: false, lastSeen: Date.now(), left: false };
+}
+function makeBot(level, room) {
+  const used = new Set(room.seats.filter(Boolean).map(p => p.nick));
+  const nick = BOT_NICKS.find(n => !used.has(n)) || 'Bot';
+  return { id: crypto.randomUUID(), token: null, nick, isBot: true, level, connected: true };
+}
+function validConfig(c) { return E.normalizeConfig(c || {}); }
+function createRoom(body) {
+  if (rooms.size >= MAX_ROOMS) throw new HttpError(503, 'O servidor está cheio. Tenta daqui a pouco.');
+  const nick = clean(body.nick, 20);
+  if (!nick) throw new HttpError(400, 'Escreve o teu nome.');
+  const visibility = body.visibility === 'private' ? 'private' : 'public';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (visibility === 'private' && (password.length < 3 || password.length > 40)) throw new HttpError(400, 'A password tem de ter entre 3 e 40 caracteres.');
+  const config = validConfig(body.config);
+  const turnSeconds = [0, 30, 60].includes(+body.turnSeconds) ? +body.turnSeconds : 60;
+  const room = {
+    code: newCode(), name: clean(body.name, 30) || `Mesa de ${nick}`, visibility,
+    pass: visibility === 'private' ? hashPassword(password) : null,
+    config, turnSeconds, seats: new Array(config.numPlayers).fill(null),
+    tokens: new Map(), hostId: null, phase: 'lobby', state: null, chat: [], deadline: null, timer: null, nextTimer: null,
+    created: Date.now(), emptySince: Date.now(),
+  };
+  const p = makePlayer(nick);
+  room.seats[0] = p; room.tokens.set(p.token, p); room.hostId = p.id;
+  rooms.set(room.code, room);
+  return { room, player: p };
+}
+const seatOf = (room, p) => room.seats.indexOf(p);
+const getRoom = code => {
+  const r = rooms.get(String(code).toUpperCase());
+  if (!r) throw new HttpError(404, 'Essa sala já não existe. Confirma o código.', 'gone');
+  return r;
+};
+function auth(room, token) {
+  const p = room.tokens.get(token);
+  if (!p) throw new HttpError(403, 'Já não estás nesta sala.', 'gone');
+  return p;
+}
+function joinRoom(room, nickIn, password) {
+  const nick = clean(nickIn, 20);
+  if (!nick) throw new HttpError(400, 'Escreve o teu nome.');
+  if (room.pass && !checkPassword(room, password)) throw new HttpError(403, 'A password está errada.');
+  if (room.phase !== 'lobby') throw new HttpError(409, 'Esta sala já está a jogar.');
+  const free = room.seats.indexOf(null);
+  if (free < 0) throw new HttpError(409, 'Esta sala está cheia.');
+  let final = nick, k = 2;
+  const used = new Set(room.seats.filter(Boolean).map(p => p.nick));
+  while (used.has(final)) final = `${nick.slice(0, 17)} ${k++}`;
+  const p = makePlayer(final);
+  room.seats[free] = p; room.tokens.set(p.token, p);
+  return p;
+}
+function humans(room) { return room.seats.filter(p => p && !p.isBot); }
+function ensureHost(room) {
+  const hostP = room.seats.find(p => p && p.id === room.hostId);
+  // Uma falha breve de rede não tira o lugar de anfitrião.
+  if (hostP && !hostP.isBot && !hostP.left && (hostP.connected || Date.now() - hostP.lastSeen < HOST_GRACE)) return;
+  const next = humans(room).find(p => p.connected) || humans(room)[0];
+  if (next) room.hostId = next.id;
+}
+function deleteRoom(room, msg) {
+  clearTimeout(room.timer); clearTimeout(room.nextTimer);
+  for (const p of room.tokens.values()) if (p.stream) { send(p.stream, { closed: msg || 'A sala foi fechada.' }); p.stream.end(); p.stream = null; }
+  rooms.delete(room.code);
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    const anyone = humans(room).some(p => p.connected);
+    if (anyone) room.emptySince = null;
+    else if (!room.emptySince) room.emptySince = now;
+    else if (now - room.emptySince > EMPTY_ROOM_TTL) deleteRoom(room);
+  }
+}, Math.min(30000, Math.max(1000, EMPTY_ROOM_TTL / 2))).unref();
+
+// --- Envio de estado --------------------------------------------------------
+function send(res, obj) { res.write(`data: ${JSON.stringify(obj)}\n\n`); }
+function lobbyFor(room, p) {
+  ensureHost(room);
+  return {
+    code: room.code, name: room.name, visibility: room.visibility, config: room.config, turnSeconds: room.turnSeconds, phase: room.phase,
+    deadline: room.deadline, now: Date.now(),
+    seats: room.seats.map(x => x && { nick: x.nick, isBot: x.isBot, level: x.level, connected: x.isBot ? true : x.connected, isHost: x.id === room.hostId }),
+    you: { seat: seatOf(room, p), isHost: p.id === room.hostId },
+    chat: room.chat,
+  };
+}
+function broadcast(room) {
+  for (const p of room.tokens.values()) {
+    if (!p.stream) continue;
+    const seat = seatOf(room, p);
+    send(p.stream, { lobby: lobbyFor(room, p), view: room.state && seat >= 0 ? E.publicView(room.state, seat) : null });
+  }
+}
+function pushOne(room, p) {
+  const seat = seatOf(room, p);
+  send(p.stream, { lobby: lobbyFor(room, p), view: room.state && seat >= 0 ? E.publicView(room.state, seat) : null });
+}
+
+// --- Ciclo de jogo -----------------------------------------------------------
+function autoPlay(room, seat, level) {
+  const s = room.state;
+  const m = B.choose(level, E.botView(s, seat), rng);
+  let r = E.applyMove(s, seat, m);
+  if (!r.ok) r = E.applyMove(s, seat, { type: 'trail', card: s.hands[seat][0] });
+  return r;
+}
+function schedule(room) {
+  clearTimeout(room.timer); room.timer = null;
+  room.deadline = null;
+  const s = room.state;
+  if (room.phase !== 'game' || !s) return;
+  if (s.phase === 'roundEnd') {
+    clearTimeout(room.nextTimer);
+    room.nextTimer = setTimeout(() => advanceRound(room), NEXT_ROUND_WAIT);
+    return;
+  }
+  if (s.phase !== 'play') return;
+  const seat = s.turn, p = room.seats[seat];
+  if (p.isBot) {
+    room.timer = setTimeout(() => stepAuto(room, seat, p.level), BOT_DELAY);
+    return;
+  }
+  const limits = [];
+  if (room.turnSeconds) limits.push(room.turnSeconds * 1000);
+  if (!p.connected) limits.push(Math.max(1000, OFFLINE_GRACE - (Date.now() - p.lastSeen)));
+  if (limits.length) {
+    const wait = Math.min(...limits);
+    room.deadline = Date.now() + wait;
+    room.timer = setTimeout(() => stepAuto(room, seat, 'medium'), wait);
+  }
+}
+function stepAuto(room, seat, level) {
+  if (!rooms.has(room.code) || room.phase !== 'game' || room.state.phase !== 'play' || room.state.turn !== seat) return;
+  autoPlay(room, seat, level);
+  schedule(room); broadcast(room);
+}
+function advanceRound(room) {
+  if (room.phase !== 'game' || !room.state || room.state.phase !== 'roundEnd') return;
+  clearTimeout(room.nextTimer);
+  E.nextRound(room.state, rng);
+  schedule(room); broadcast(room);
+}
+
+// --- Ações --------------------------------------------------------------------
+function requireHost(room, p) { ensureHost(room); if (p.id !== room.hostId) throw new HttpError(403, 'Só quem criou a sala pode fazer isso.'); }
+function requireLobby(room) { if (room.phase !== 'lobby') throw new HttpError(409, 'A partida já começou.'); }
+function dropFromSeat(room, seat, p) {
+  // Durante o jogo, um bot fica com o lugar; no lobby, o lugar fica livre.
+  if (room.phase === 'game') {
+    const nick = p.nick;
+    const bot = makeBot('medium', room); bot.nick = `${nick} (bot)`.slice(0, 26);
+    room.seats[seat] = bot;
+    if (room.state && room.state.phase === 'play') schedule(room);
+  } else room.seats[seat] = null;
+}
+function doAction(room, p, b) {
+  const seat = seatOf(room, p);
+  switch (b.action) {
+    case 'chat': {
+      const text = clean(b.text, 200);
+      if (!text) return;
+      if (!allow('chat:' + p.id, 30, 8)) throw new HttpError(429, 'Estás a enviar mensagens demasiado depressa.');
+      room.chat.push({ nick: p.nick, text });
+      if (room.chat.length > 60) room.chat.shift();
+      break;
+    }
+    case 'seat': {
+      requireLobby(room);
+      const to = +b.seat;
+      if (!Number.isInteger(to) || to < 0 || to >= room.seats.length) throw new HttpError(400, 'Esse lugar não existe.');
+      if (room.seats[to]) throw new HttpError(409, 'Esse lugar já está ocupado.');
+      room.seats[seat] = null; room.seats[to] = p;
+      break;
+    }
+    case 'addBot': {
+      requireHost(room, p); requireLobby(room);
+      const to = +b.seat;
+      if (!Number.isInteger(to) || to < 0 || to >= room.seats.length || room.seats[to]) throw new HttpError(409, 'Esse lugar não está livre.');
+      room.seats[to] = makeBot(['easy', 'medium', 'hard'].includes(b.level) ? b.level : 'medium', room);
+      break;
+    }
+    case 'removeSeat': {
+      requireHost(room, p);
+      const to = +b.seat, x = room.seats[to];
+      if (!x) throw new HttpError(409, 'Esse lugar já está livre.');
+      if (x === p) throw new HttpError(400, 'Usa o botão para sair da sala.');
+      if (x.isBot) { requireLobby(room); room.seats[to] = null; break; }
+      room.tokens.delete(x.token);
+      if (x.stream) { send(x.stream, { closed: 'Foste retirado da sala.' }); x.stream.end(); x.stream = null; }
+      dropFromSeat(room, to, x);
+      break;
+    }
+    case 'start': {
+      requireHost(room, p); requireLobby(room);
+      if (room.seats.some(x => !x)) throw new HttpError(409, 'Há lugares vazios. Espera por amigos ou adiciona bots.');
+      room.state = E.createMatch(room.config, rng);
+      room.phase = 'game';
+      schedule(room);
+      break;
+    }
+    case 'move': {
+      if (room.phase !== 'game') throw new HttpError(409, 'A partida ainda não começou.');
+      const r = E.applyMove(room.state, seat, sanitizeMove(b.move));
+      if (!r.ok) throw new HttpError(400, r.reason);
+      schedule(room);
+      break;
+    }
+    case 'next': {
+      requireHost(room, p);
+      advanceRound(room);
+      return;
+    }
+    case 'lobby': {
+      requireHost(room, p);
+      if (room.phase !== 'game' || room.state.phase === 'play') throw new HttpError(409, 'A partida ainda está a decorrer.');
+      clearTimeout(room.timer); clearTimeout(room.nextTimer);
+      room.phase = 'lobby'; room.state = null; room.deadline = null;
+      break;
+    }
+    case 'leave': {
+      room.tokens.delete(p.token);
+      if (p.stream) { p.stream.end(); p.stream = null; }
+      p.left = true; p.connected = false;
+      dropFromSeat(room, seat, p);
+      ensureHost(room);
+      if (!humans(room).length) { deleteRoom(room); return; }
+      break;
+    }
+    default:
+      throw new HttpError(400, 'Ação desconhecida.');
+  }
+  broadcast(room);
+}
+function sanitizeMove(m) {
+  if (!m || typeof m !== 'object') return null;
+  const take = Array.isArray(m.take) ? m.take.slice(0, 60).map(String) : [];
+  return { type: String(m.type), card: String(m.card), take, build: m.build == null ? undefined : String(m.build) };
+}
+
+// --- HTTP ------------------------------------------------------------------------
+const ROOT = path.join(__dirname, '..');
+const STATIC = {
+  '/': ['client/index.html', 'text/html; charset=utf-8'],
+  '/index.html': ['client/index.html', 'text/html; charset=utf-8'],
+  '/styles.css': ['client/styles.css', 'text/css; charset=utf-8'],
+  '/app.js': ['client/app.js', 'text/javascript; charset=utf-8'],
+  '/rules.js': ['client/rules.js', 'text/javascript; charset=utf-8'],
+  '/engine.js': ['shared/engine.js', 'text/javascript; charset=utf-8'],
+  '/bots.js': ['shared/bots.js', 'text/javascript; charset=utf-8'],
+};
+const fileCache = {};
+const SECURITY = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+};
+function json(res, status, obj) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...SECURITY });
+  res.end(JSON.stringify(obj));
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on('data', c => {
+      size += c.length;
+      if (size > 16384) { reject(new HttpError(413, 'Pedido demasiado grande.')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); }
+      catch (e) { reject(new HttpError(400, 'Pedido mal formado.')); }
+    });
+    req.on('error', reject);
+  });
+}
+function openStream(req, res, room, token) {
+  const p = room.tokens.get(token);
+  if (!p) { json(res, 403, { error: 'Já não estás nesta sala.', code: 'gone' }); return; }
+  if (p.stream) { try { p.stream.end(); } catch (e) {} }
+  res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform', 'X-Accel-Buffering': 'no', Connection: 'keep-alive', ...SECURITY });
+  res.write('retry: 2000\n\n');
+  p.stream = res; p.connected = true; p.lastSeen = Date.now();
+  room.emptySince = null;
+  ensureHost(room);
+  if (room.phase === 'game' && room.state.phase === 'play' && room.state.turn === seatOf(room, p)) schedule(room);
+  broadcast(room);
+  const beat = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 20000);
+  req.on('close', () => {
+    clearInterval(beat);
+    if (p.stream !== res) return; // já ligou de novo
+    p.stream = null; p.connected = false; p.lastSeen = Date.now();
+    if (!rooms.has(room.code)) return;
+    if (room.phase === 'game' && room.state.phase === 'play' && room.state.turn === seatOf(room, p)) schedule(room);
+    broadcast(room);
+  });
+}
+async function route(req, res) {
+  const url = new URL(req.url, 'http://x');
+  const pathname = url.pathname;
+  const ip = ipOf(req);
+  if (req.method === 'GET' && STATIC[pathname]) {
+    const [file, type] = STATIC[pathname];
+    const body = fileCache[file] || (fileCache[file] = fs.readFileSync(path.join(ROOT, file)));
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': pathname === '/' ? 'no-cache' : 'public, max-age=300', ...SECURITY });
+    res.end(body);
+    return;
+  }
+  if (!pathname.startsWith('/api/')) throw new HttpError(404, 'Página não encontrada.');
+  if (!allow('ip:' + ip, 1500, 300)) throw new HttpError(429, 'Demasiados pedidos. Espera um pouco.');
+  if (pathname === '/api/health') return json(res, 200, { ok: true, game: 'cassino', rooms: rooms.size });
+  if (pathname === '/api/rooms' && req.method === 'GET') {
+    const list = [...rooms.values()].filter(r => r.visibility === 'public' && r.phase === 'lobby' && r.seats.some(x => !x) && humans(r).some(p => p.connected))
+      .sort((a, b) => b.created - a.created).slice(0, 50)
+      .map(r => ({ code: r.code, name: r.name, players: r.seats.filter(Boolean).length, capacity: r.seats.length, config: r.config }));
+    return json(res, 200, { rooms: list });
+  }
+  if (pathname === '/api/rooms' && req.method === 'POST') {
+    if (!allow('create:' + ip, 10, 10)) throw new HttpError(429, 'Criaste muitas salas seguidas. Espera um minuto.');
+    const { room, player } = createRoom(await readBody(req));
+    return json(res, 200, { code: room.code, token: player.token });
+  }
+  const m = pathname.match(/^\/api\/rooms\/([A-Za-z0-9]{5})\/(join|check|action|stream)$/);
+  if (!m) throw new HttpError(404, 'Pedido desconhecido.');
+  const room = getRoom(m[1]), verb = m[2];
+  if (verb === 'stream' && req.method === 'GET') return openStream(req, res, room, url.searchParams.get('token'));
+  if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
+  const body = await readBody(req);
+  if (verb === 'join') {
+    if (room.pass && !allow('pw:' + ip + ':' + room.code, 6, 6)) throw new HttpError(429, 'Demasiadas tentativas de password. Espera um minuto.');
+    const p = joinRoom(room, body.nick, body.password);
+    broadcast(room);
+    return json(res, 200, { token: p.token });
+  }
+  const p = auth(room, body.token);
+  if (verb === 'check') return json(res, 200, { ok: true });
+  if (!allow('act:' + p.id, 240, 40)) throw new HttpError(429, 'Demasiados pedidos. Espera um pouco.');
+  doAction(room, p, body);
+  return json(res, 200, { ok: true });
+}
+const server = http.createServer((req, res) => {
+  route(req, res).catch(err => {
+    const status = err instanceof HttpError ? err.status : 500;
+    if (status === 500) console.error(err);
+    if (res.headersSent) { res.end(); return; }
+    json(res, status, { error: status === 500 ? 'O servidor teve um problema. Tenta outra vez.' : err.message, code: err.code });
+  });
+});
+server.requestTimeout = 30000;
+server.headersTimeout = 15000;
+if (require.main === module) {
+  server.listen(PORT, () => console.log(`Cassino a correr em http://localhost:${PORT}`));
+}
+module.exports = { server, rooms };

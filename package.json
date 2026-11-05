@@ -1,0 +1,14 @@
+{
+  "name": "cassino-da-madeira",
+  "version": "1.0.0",
+  "description": "Jogo de cartas Cassino da Madeira, offline contra bots e online com lobbies",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node --test test/engine.test.js test/bots.test.js test/server.test.js",
+    "tournament": "node scripts/tournament.js",
+    "build:offline": "node scripts/build-offline.js"
+  }
+}
