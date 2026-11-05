@@ -286,6 +286,48 @@ test('jogadas enumeradas são sempre legais; cartas conservam-se em 300 rondas',
   }
 });
 
+test('histórico: regista distribuições e jogadas, e recomeça em cada ronda', () => {
+  const s = E.createMatch({ numPlayers: 2, target: 21 }, seeded(21));
+  assert.deepStrictEqual(s.history, [{ type: 'deal', no: 1, deck: 40 }]);
+  let plays = 0;
+  while (s.phase === 'play') { E.applyMove(s, s.turn, { type: 'trail', card: s.hands[s.turn][0] }); plays++; }
+  const deals = s.history.filter(h => h.type === 'deal');
+  assert.deepStrictEqual(deals.map(d => d.no), [1, 2, 3, 4, 5, 6]);
+  assert.strictEqual(deals[5].deck, 0);
+  assert.strictEqual(s.history.length, 6 + plays);
+  // a distribuição vem depois da jogada que esvaziou as mãos
+  assert.strictEqual(s.history[9].type, 'deal');
+  s.phase = 'roundEnd'; E.nextRound(s, seeded(1));
+  assert.strictEqual(s.history.length, 1);
+  for (const n of [3, 4]) {
+    const t = E.createMatch({ numPlayers: n, target: 21 }, seeded(n));
+    while (t.phase === 'play') E.applyMove(t, t.turn, { type: 'trail', card: t.hands[t.turn][0] });
+    const d = t.history.filter(h => h.type === 'deal');
+    assert.strictEqual(d[d.length - 1].no, n === 3 ? 4 : 3);
+  }
+});
+
+test('o histórico público não revela cartas escondidas, ao longo de toda a ronda', () => {
+  const s = E.createMatch({ numPlayers: 3, target: 'round' }, seeded(31));
+  while (s.phase === 'play') {
+    const v = E.publicView(s, s.turn);
+    const txt = JSON.stringify({ h: v.history, l: v.lastMove });
+    const hidden = s.hands.flat().concat(s.deck);
+    for (const c of hidden) assert.ok(!txt.includes(`"${c}"`), c);
+    const ms = E.enumerateMoves({ hand: s.hands[s.turn], table: s.table });
+    E.applyMove(s, s.turn, ms.find(m => m.type !== 'trail') || ms[0]);
+  }
+});
+
+test('jogos guardados sem histórico continuam a funcionar', () => {
+  const s = E.createMatch({ numPlayers: 2, target: 21 }, seeded(5));
+  delete s.history;
+  assert.ok(E.applyMove(s, s.turn, { type: 'trail', card: s.hands[s.turn][0] }).ok);
+  assert.strictEqual(s.history.length, 1);
+  delete s.history;
+  assert.deepStrictEqual(E.publicView(s, 0).history, []);
+});
+
 test('actionsFor oferece as jogadas certas para a seleção', () => {
   const ctx = { hand: ['3S', '6D', '3C'], table: [L('3H'), B('b1', 3)] };
   const types = (card, sel) => E.actionsFor(ctx, card, sel).map(a => a.move.type).sort();

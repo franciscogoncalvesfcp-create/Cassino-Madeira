@@ -71,6 +71,7 @@
     s.table = [];
     s.seen = [];
     s.lastCapturer = null; s.lastMove = null; s.result = null; s.nextBuild = 1;
+    s.history = [];
     for (let i = 0; i < 4; i++) {
       const c = s.deck.pop();
       s.table.push({ k: 'c', id: c });
@@ -85,6 +86,9 @@
     for (let k = 0; k < HAND_SIZE; k++)
       for (let i = 1; i <= s.config.numPlayers; i++)
         s.hands[(s.dealer + i) % s.config.numPlayers].push(s.deck.pop());
+    // O histórico guarda só o que foi público; quantas distribuições já houve deduz-se do baralho.
+    const perDeal = HAND_SIZE * s.config.numPlayers;
+    (s.history || (s.history = [])).push({ type: 'deal', no: Math.round((48 - s.deck.length) / perDeal), deck: s.deck.length });
   }
 
   // --- Validação ----------------------------------------------------------
@@ -280,6 +284,7 @@
       }
     }
     s.lastMove = move;
+    (s.history || (s.history = [])).push(move);
     s.turn = (player + 1) % s.config.numPlayers;
     if (allEmpty()) {
       if (s.deck.length > 0) deal(s);
@@ -371,6 +376,8 @@
       roundNo: s.roundNo,
       phase: s.phase,
       lastMove: s.lastMove,
+      lastCapturer: s.lastCapturer,
+      history: s.history || [],
       result: s.result,
       match: s.match,
     };
@@ -402,7 +409,7 @@
       hands: s.hands.map(h => h.slice()), deck: s.deck.slice(),
       table: s.table.map(t => (t.k === 'b' ? { k: 'b', id: t.id, value: t.value, locked: t.locked, cards: t.cards.slice(), by: t.by } : t)),
       captured: s.captured.map(c => c.slice()), sweeps: s.sweeps.slice(), seen: s.seen.slice(),
-      turn: s.turn, lastCapturer: s.lastCapturer, nextBuild: s.nextBuild, lastMove: null,
+      turn: s.turn, lastCapturer: s.lastCapturer, nextBuild: s.nextBuild, lastMove: null, history: [],
       phase: s.phase, result: null, match: s.match,
     };
   }

@@ -100,7 +100,7 @@
       config: view.config, roundNo: 0, dealer: view.dealer, totals: view.totals.slice(),
       hands, deck: unknown.slice(i), table: view.table.map(t => (t.k === 'b' ? { ...t, cards: t.cards.slice() } : t)),
       captured: view.captured.map(c => c.slice()), sweeps: view.sweeps.slice(), seen: view.seen.slice(),
-      turn: view.turn, lastCapturer: view.lastCapturer, nextBuild: view.nextBuild, lastMove: null,
+      turn: view.turn, lastCapturer: view.lastCapturer, nextBuild: view.nextBuild, lastMove: null, history: [],
       phase: 'play', result: null, match: { over: false, winners: [], how: null, extra: false },
     };
   }

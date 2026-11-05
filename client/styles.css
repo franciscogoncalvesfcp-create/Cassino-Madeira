@@ -166,6 +166,8 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
   font-size: 14px; flex: none;
 }
 .barra .info { color: var(--texto-2); white-space: nowrap; }
+.jogo-corpo { flex: 1; min-height: 0; display: flex; }
+.jogo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .placar { display: flex; gap: 12px; flex: 1; flex-wrap: wrap; min-width: 0; justify-content: flex-end; font-variant-numeric: tabular-nums; }
 .placar span { white-space: nowrap; }
 .placar b { font-size: 16px; color: var(--sinal); }
@@ -190,9 +192,51 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
 .etiqueta.parceiro { background: var(--sinal); }
 .relato {
   min-height: 34px; flex: none; text-align: center; font-size: 14.5px; color: var(--texto);
+  display: flex; align-items: center; justify-content: center; gap: 12px;
   padding-block: 6px 2px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 .relato .clareza { color: var(--sinal); font-weight: 700; }
+.relato-texto { min-width: 0; display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.baralho { flex: none; display: flex; align-items: center; gap: 6px; --w: 30px; font-variant-numeric: tabular-nums; }
+.baralho b { font-size: 15px; min-width: 2ch; text-align: left; }
+.baralho.sem-cartas .card { background: transparent; border: 1.5px dashed var(--texto-2); }
+.alerta-baralho { font-size: 13.5px; font-weight: 700; border-radius: 4px; }
+.alerta-baralho:empty { display: none; }
+.alerta-baralho.quase { color: var(--sinal); }
+.alerta-baralho.fim { background: var(--zarcao); color: #fff; padding: 2px 9px; }
+.anuncio {
+  position: fixed; z-index: 45; left: 50%; top: 38%; transform: translate(-50%, -50%); pointer-events: none;
+  width: min(440px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 6px; text-align: center;
+  padding: 18px 20px 20px; border-radius: 6px; background: var(--casco-fundo); box-shadow: 0 14px 34px rgba(0,0,0,.5);
+  border-bottom: 9px solid var(--zarcao); border-top: 5px solid var(--sinal);
+  animation: anuncio 2.5s ease both;
+}
+.anuncio b { font-family: var(--display); font-weight: 400; font-size: clamp(30px, 7vw, 42px); line-height: 1.1; color: var(--cal); }
+.anuncio span { font-size: 15px; color: var(--texto); }
+@keyframes anuncio { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.94); } 9% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 85% { opacity: 1; transform: translate(-50%, -50%); } 100% { opacity: 0; transform: translate(-50%, -50%); } }
+
+/* Histórico: coluna ao lado da mesa em ecrãs largos, aba que desliza nos estreitos */
+.historico { display: none; flex-direction: column; min-height: 0; background: var(--casco-fundo); }
+.historico.aberto { display: flex; }
+.historico-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 8px 14px; }
+.historico-topo h3 { font-size: 17px; color: var(--cal); }
+.historico-lista { list-style: none; margin: 0; padding: 0 12px 14px 14px; overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.historico-lista li { color: var(--texto); }
+.historico-lista li.meu { color: var(--sinal); }
+.historico-lista .log-div { color: var(--texto-2); font-size: 13px; font-weight: 700; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.14); }
+.historico-lista .log-div:first-child { border-top: 0; padding-top: 0; }
+.historico-fundo { display: none; }
+@media (min-width: 1000px) { .historico { width: 290px; flex: none; } }
+@media (max-width: 999px) {
+  .historico.aberto {
+    position: fixed; z-index: 70; top: 0; right: 0; bottom: 0; width: min(330px, 88vw); box-shadow: -10px 0 26px rgba(0,0,0,.45);
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px);
+    animation: gaveta 180ms ease-out;
+  }
+  .historico-fundo.aberto { display: block; position: fixed; inset: 0; z-index: 65; background: rgba(4,20,31,.5); }
+}
+@keyframes gaveta { from { transform: translateX(40px); opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .historico.aberto { animation: none; } .anuncio { animation: none; } }
 .mesa {
   flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 10px 10px; align-content: center; justify-content: center;
   padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -242,6 +286,7 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
   .assento.eu { flex-direction: column; align-items: flex-start; gap: 0; }
   .costas-fila { display: none; }
   .relato { min-height: 24px; padding-block: 2px 0; font-size: 13px; }
+  .baralho { --w: 18px; }
   .acoes { min-height: 44px; padding-block: 4px; }
 }
 

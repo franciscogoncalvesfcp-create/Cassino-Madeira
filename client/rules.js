@@ -97,6 +97,8 @@ ${ex(c('10D') + c('2S') + c('AH'), 'As cartas que dão pontos diretamente têm u
   <li>Os botões mudam conforme a seleção: levar, montar, chamar, subir ou duplicar. Se nada servir, é dito porquê.</li>
   <li>Sem cartas da mesa selecionadas, o botão é <b>Largar</b>.</li>
   <li>Um monte tem um selo com o seu valor. O cadeado indica que está trancado.</li>
+  <li>O botão <b>Histórico</b> mostra todas as jogadas da ronda.</li>
+  <li>Junto ao baralho aparece um aviso quando falta só uma distribuição e outro quando saem as últimas cartas, com o nome de quem fica com as sobras nesse momento.</li>
 </ul>
 </section>`;
 };

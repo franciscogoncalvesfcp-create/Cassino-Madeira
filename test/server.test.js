@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50';
+process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50'; process.env.DEAL_PAUSE_MS = '0';
 const { server, rooms } = require('../server/server.js');
 const E = require('../shared/engine.js');
 let base;
@@ -71,6 +71,8 @@ test('partida completa com 2 humanos e 2 bots em duplas: privacidade e validaç�
   assert.strictEqual((await post(`/api/rooms/${code}/join`, { nick: 'Tarde' })).status, 409, 'não entra a meio');
   const tok = [a.body.token, b.body.token], str = [sa, sb];
   // Fora de vez e cartas alheias são recusadas
+  // Espera pela vez de um humano: a vez não avança sozinha e a jogada do outro tem de ser recusada.
+  await until(() => room.state.turn <= 1);
   const s = room.state;
   const notTurnHuman = s.turn === 0 ? 1 : 0;
   assert.strictEqual((await post(`/api/rooms/${code}/action`, { token: tok[notTurnHuman], action: 'move', move: { type: 'trail', card: s.hands[notTurnHuman][0] } })).status, 400);
@@ -83,6 +85,7 @@ test('partida completa com 2 humanos e 2 bots em duplas: privacidade e validaç�
       // o que o jogador recebe nunca contém as cartas escondidas dos outros
       const secret = room.state.hands.flatMap((h, i) => (i === t ? [] : h)).concat(room.state.deck);
       const txt = JSON.stringify(v);
+      assert.ok(Array.isArray(v.history) && v.history[0].type === 'deal', 'histórico enviado');
       for (const c of secret) assert.ok(!txt.includes(`"${c}"`), 'fuga: ' + c);
       const ms = E.enumerateMoves({ hand: v.hand, table: v.table });
       const m = ms.find(x => x.type === 'capture') || ms[0];

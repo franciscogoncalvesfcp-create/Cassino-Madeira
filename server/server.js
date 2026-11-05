@@ -13,6 +13,7 @@ const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const MAX_ROOMS = +process.env.MAX_ROOMS || 300;
 const BOT_DELAY = +process.env.BOT_DELAY_MS || 1200;
 const OFFLINE_GRACE = +process.env.OFFLINE_GRACE_MS || 30000; // quanto se espera por quem perdeu a ligação
+const DEAL_PAUSE = process.env.DEAL_PAUSE_MS !== undefined ? +process.env.DEAL_PAUSE_MS : null; // tempo para a animação de distribuição
 const HOST_GRACE = +process.env.HOST_GRACE_MS || 20000;
 const NEXT_ROUND_WAIT = +process.env.NEXT_ROUND_MS || 45000;
 const EMPTY_ROOM_TTL = +process.env.EMPTY_ROOM_MS || 10 * 60000;
@@ -186,12 +187,14 @@ function schedule(room) {
   }
   if (s.phase !== 'play') return;
   const seat = s.turn, p = room.seats[seat];
+  const tail = s.history[s.history.length - 1];
+  const pause = tail && tail.type === 'deal' ? (DEAL_PAUSE === null ? (s.config.numPlayers * 4 + 4) * 90 + 900 : DEAL_PAUSE) : 0;
   if (p.isBot) {
-    room.timer = setTimeout(() => stepAuto(room, seat, p.level), BOT_DELAY);
+    room.timer = setTimeout(() => stepAuto(room, seat, p.level), BOT_DELAY + pause);
     return;
   }
   const limits = [];
-  if (room.turnSeconds) limits.push(room.turnSeconds * 1000);
+  if (room.turnSeconds) limits.push(room.turnSeconds * 1000 + pause);
   if (!p.connected) limits.push(Math.max(1000, OFFLINE_GRACE - (Date.now() - p.lastSeen)));
   if (limits.length) {
     const wait = Math.min(...limits);

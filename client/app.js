@@ -7,7 +7,7 @@
   // --- Definições e armazenamento -------------------------------------------
   function load(k, d) { try { const v = localStorage.getItem('cassino.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }
   function save(k, v) { try { if (v === null) localStorage.removeItem('cassino.' + k); else localStorage.setItem('cassino.' + k, JSON.stringify(v)); } catch (e) {} }
-  const prefs = Object.assign({ name: '', speed: 'normal', hints: true, sound: true, table: 'azul', back: 'riscas', colors4: false, motion: true }, load('prefs', {}));
+  const prefs = Object.assign({ name: '', speed: 'normal', hints: true, sound: true, table: 'azul', back: 'riscas', colors4: false, motion: true, logOpen: true }, load('prefs', {}));
   const reducedMotion = () => !prefs.motion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const SPEEDS = { lenta: 1900, normal: 1150, rapida: 550 };
   function applyPrefs() {
@@ -35,6 +35,8 @@
     capture: () => { beep(420, 0.08); beep(560, 0.1, 'triangle', 0.05, 0.06); },
     sweep: () => { beep(520, 0.12); beep(660, 0.12, 'triangle', 0.05, 0.1); beep(880, 0.2, 'triangle', 0.05, 0.2); },
     turn: () => beep(700, 0.09, 'sine', 0.03),
+    deal: () => beep(260, 0.04, 'triangle', 0.025),
+    last: () => { beep(392, 0.16, 'triangle', 0.05); beep(330, 0.26, 'triangle', 0.05, 0.14); },
     win: () => { [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.22, 'triangle', 0.06, i * 0.13)); },
   };
 
@@ -219,7 +221,7 @@
     const s = this.state;
     this.persist();
     if (s.phase !== 'play' || s.turn === 0) return;
-    const delay = SPEEDS[prefs.speed] || 1150;
+    const delay = (SPEEDS[prefs.speed] || 1150) + Math.max(0, ui.dealingUntil - Date.now());
     this.timer = setTimeout(() => {
       if (session !== this) return;
       const p = s.turn;
@@ -455,8 +457,9 @@
 
   // --- Mesa de jogo -----------------------------------------------------------
   const ui = {
-    card: null, sel: new Set(), lastTurnSig: '', overlay: null, chatOpen: false, menuOpen: false, summaryShown: '',
-    reset() { this.card = null; this.sel = new Set(); this.overlay = null; this.chatOpen = false; this.menuOpen = false; this.summaryShown = ''; lastMoveSig = ''; },
+    card: null, sel: new Set(), chatOpen: false, menuOpen: false, logDrawer: false, logStick: true,
+    deal: null, dealSig: '', dealToken: 0, dealingUntil: 0,
+    reset() { this.card = null; this.sel = new Set(); this.chatOpen = false; this.menuOpen = false; this.logDrawer = false; this.logStick = true; this.deal = null; this.dealSig = ''; this.dealToken++; this.dealingUntil = 0; lastMoveSig = ''; },
   };
   let lastMoveSig = '';
 
@@ -470,7 +473,7 @@
     if (!cfg.teams) return nameOf(side, v);
     return side === E.sideOf(cfg, v.me) ? 'A tua dupla' : 'Adversários';
   }
-  function moveText(m, v) {
+  function moveText(m, v, detail) {
     if (!m) return '';
     const me = m.player === v.me;
     const n = esc(nameOf(m.player, v));
@@ -481,10 +484,10 @@
         const cl = m.sweep ? ' <span class="clareza">Clareza!</span>' : '';
         return (me ? `Levaste ${list(m.take)} com ${mini(m.card)}` : `${n} levou ${list(m.take)} com ${mini(m.card)}`) + cl;
       }
-      case 'build': return me ? `Montaste ${m.value}` : `${n} montou ${m.value}`;
-      case 'call': return me ? `Chamaste ${m.value}` : `${n} chamou ${m.value}`;
-      case 'raise': return me ? `Subiste o monte para ${m.value}` : `${n} subiu o monte para ${m.value}`;
-      case 'double': return me ? `Duplicaste o monte de ${m.value}` : `${n} duplicou o monte de ${m.value}`;
+      case 'build': return (me ? `Montaste ${m.value}` : `${n} montou ${m.value}`) + (detail ? ` com ${mini(m.card)} sobre ${list(m.take)}` : '');
+      case 'call': return (me ? `Chamaste ${m.value}` : `${n} chamou ${m.value}`) + (detail ? ` com ${mini(m.card)} sobre ${list(m.take)}` : '');
+      case 'raise': return (me ? `Subiste o monte para ${m.value}` : `${n} subiu o monte para ${m.value}`) + (detail ? ` com ${mini(m.card)}` : '');
+      case 'double': return (me ? `Duplicaste o monte de ${m.value}` : `${n} duplicou o monte de ${m.value}`) + (detail ? ` com ${list([m.card].concat(m.take))}` : '');
     }
     return '';
   }
@@ -497,7 +500,7 @@
     const cfg = v.config, side = E.sideOf(cfg, p);
     const x = session.seats && session.seats[p];
     const partner = cfg.teams && p !== v.me && side === E.sideOf(cfg, v.me);
-    const backs = Array.from({ length: v.handCounts[p] }, () => back()).join('');
+    const backs = Array.from({ length: Math.max(0, v.handCounts[p] - (ui.deal ? ui.deal.seats[p] || 0 : 0)) }, () => back()).join('');
     const off = x && !x.isBot && x.connected === false;
     return `<div class="assento ${v.turn === p && v.phase === 'play' ? 'vez' : ''} ${off ? 'fora' : ''}" data-seat="${p}">
       <div class="assento-nome">${esc(nameOf(p, v))}${v.dealer === p ? '<span class="etiqueta" title="Dador">Dá</span>' : ''}${partner ? '<span class="etiqueta parceiro">Dupla</span>' : ''}</div>
@@ -517,19 +520,25 @@
     if (!session) { go('menu'); return; }
     const v = session.view();
     if (!v) { app.innerHTML = `<div class="pagina tabuas"><div class="pagina-corpo"><p>A carregar a mesa.</p></div></div>`; return; }
+    checkDeal(v); // antes de desenhar, para as cartas a caminho não aparecerem já na mão de ninguém
     const metaTxt = v.config.target === 'round' ? 'Partida de uma ronda' : `Meta ${v.config.target}`;
     const others = [];
     for (let i = 1; i < v.config.numPlayers; i++) others.push((v.me + i) % v.config.numPlayers);
     const myDeal = v.dealer === v.me ? '<span class="etiqueta">Dá</span>' : '';
     app.innerHTML = `<div class="jogo tabuas">
       <div class="barra">
-        <span class="info">Ronda ${v.roundNo}. ${esc(metaTxt)}. Baralho: ${v.deckCount}</span>
+        <span class="info">Ronda ${v.roundNo}. ${esc(metaTxt)}</span>
         <div class="placar">${placar(v)}</div>
-        <div class="barra-acoes">${session.kind === 'online' ? `<button class="icon" data-act="toggle-chat">Conversa</button>` : ''}<button class="icon" data-act="toggle-menu">Menu</button></div>
+        <div class="barra-acoes"><button class="icon" data-act="toggle-log" aria-controls="historico">Histórico</button>${session.kind === 'online' ? `<button class="icon" data-act="toggle-chat">Conversa</button>` : ''}<button class="icon" data-act="toggle-menu">Menu</button></div>
       </div>
       <div class="faixa"></div>
+      <div class="jogo-corpo">
+      <div class="jogo-main">
       <div class="oponentes">${others.map(p => seatHtml(p, v)).join('')}</div>
-      <div class="relato" id="relato">${moveText(v.lastMove, v) || 'Começa a ronda.'}</div>
+      <div class="relato" id="relato">
+        <div class="baralho" id="baralho" aria-label="Cartas no baralho"><span class="card costas"></span><b id="baralho-n"></b></div>
+        <div class="relato-texto"><div id="relato-txt">${moveText(v.lastMove, v) || 'Começa a ronda.'}</div><div class="alerta-baralho" id="alerta" role="status"></div></div>
+      </div>
       <div class="mesa" id="mesa"></div>
       <div class="painel">
         <div class="acoes" id="acoes"></div>
@@ -542,18 +551,139 @@
         </div>
         <div class="eu-linha" id="eu-linha"></div>
       </div>
-    </div><div id="sobre"></div>`;
+      </div>
+      <aside class="historico" id="historico" aria-label="Histórico da ronda">
+        <div class="historico-topo"><h3>Histórico da ronda</h3><button class="icon" data-act="toggle-log">Fechar</button></div>
+        <ol class="historico-lista" id="historico-lista"></ol>
+      </aside>
+      </div>
+    </div><div class="historico-fundo" id="historico-fundo" data-act="toggle-log"></div><div id="sobre"></div>`;
     paintDynamic(v);
+    runDeal(v);
+    const lista = document.getElementById('historico-lista');
+    lista.addEventListener('scroll', () => { ui.logStick = lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 12; });
+  }
+
+  // --- Histórico ------------------------------------------------------------
+  const isWide = () => !window.matchMedia || matchMedia('(min-width: 1000px)').matches;
+  function paintLog(v) {
+    const aside = document.getElementById('historico'), lista = document.getElementById('historico-lista');
+    if (!aside) return;
+    const open = isWide() ? prefs.logOpen : ui.logDrawer;
+    aside.classList.toggle('aberto', open);
+    document.getElementById('historico-fundo').classList.toggle('aberto', open && !isWide());
+    const items = (v.history || []).map(h => {
+      if (h.type === 'deal') return `<li class="log-div">Distribuição ${h.no}${h.deck === 0 ? ': últimas cartas' : ''}</li>`;
+      return `<li class="${h.player === v.me ? 'meu' : ''}">${moveText(h, v, true)}</li>`;
+    });
+    if (v.result && v.result.leftovers.length && v.result.leftoversTo !== null)
+      items.push(`<li class="log-div">Sobras: ${v.result.leftovers.map(mini).join(' ')} para ${esc(sideNameOfPlayer(v.result.leftoversTo, v))}</li>`);
+    lista.innerHTML = items.join('');
+    if (ui.logStick) lista.scrollTop = lista.scrollHeight;
+  }
+
+  // --- Distribuição ---------------------------------------------------------
+  const STAGGER = { lenta: 110, normal: 80, rapida: 45 };
+  function checkDeal(v) {
+    const sig = v.roundNo + ':' + v.deckCount;
+    if (sig === ui.dealSig) return;
+    ui.dealSig = sig;
+    const h = v.history || [];
+    const tail = h[h.length - 1];
+    if (!tail || tail.type !== 'deal') return; // ao voltar a meio de uma mão, não se distribui de novo
+    if (reducedMotion()) { if (tail.deck === 0) announceLast(v); return; }
+    const n = v.config.numPlayers, seats = {};
+    const flights = [];
+    for (let k = 0; k < 4; k++) for (let i = 1; i <= n; i++) {
+      const p = (v.dealer + i) % n;
+      flights.push(p === v.me ? { hand: v.hand[k] } : { seat: p });
+      if (p !== v.me) seats[p] = (seats[p] || 0) + 1;
+    }
+    const first = tail.no === 1;
+    if (first) v.table.forEach(t => flights.push({ table: t.id }));
+    const stagger = STAGGER[prefs.speed] || 80, dur = 280, wait = first ? 150 : 450;
+    ui.deal = { hand: new Set(v.hand), table: new Set(first ? v.table.map(t => t.id) : []), seats, deck: n * 4, flights, stagger, dur, wait, last: tail.deck === 0, started: false };
+    ui.dealingUntil = Date.now() + wait + flights.length * stagger + dur + 60;
+  }
+  function runDeal(v) {
+    const d = ui.deal;
+    if (!d || d.started) return;
+    d.started = true;
+    const token = ui.dealToken;
+    d.flights.forEach((f, i) => setTimeout(() => {
+      if (token !== ui.dealToken || ui.deal !== d) return;
+      dealOne(f, d, token);
+    }, d.wait + i * d.stagger));
+    setTimeout(() => {
+      if (token !== ui.dealToken || ui.deal !== d) return;
+      ui.deal = null;
+      if (screen === 'game' && session) {
+        const now = session.view();
+        if (document.getElementById('mesa')) paintDynamic(now);
+        if (d.last) announceLast(now);
+      }
+    }, ui.dealingUntil - Date.now());
+  }
+  function dealOne(f, d, token) {
+    const pile = document.querySelector('#baralho .card');
+    let target = null;
+    if (f.hand) target = document.querySelector(`[data-card-btn="${f.hand}"]`);
+    else if (f.table) target = document.querySelector(`[data-act="pick-table"][data-id="${f.table}"]`);
+    else target = document.querySelector(`.assento[data-seat="${f.seat}"] .costas-fila`);
+    if (target && !target.getClientRects().length || target && !target.getBoundingClientRect().height) target = null;
+    if (!target && f.seat !== undefined) target = document.querySelector(`.assento[data-seat="${f.seat}"]`);
+    const arrive = () => {
+      if (token !== ui.dealToken || ui.deal !== d) return;
+      sfx.deal();
+      if (f.hand) {
+        d.hand.delete(f.hand);
+        const el = document.querySelector(`[data-card-btn="${f.hand}"]`);
+        if (el) { el.style.visibility = ''; }
+      } else if (f.table) {
+        d.table.delete(f.table);
+        const el = document.querySelector(`[data-act="pick-table"][data-id="${f.table}"]`);
+        if (el) el.style.visibility = '';
+      } else {
+        d.seats[f.seat]--;
+        const row = document.querySelector(`.assento[data-seat="${f.seat}"] .costas-fila`);
+        if (row) row.insertAdjacentHTML('beforeend', back());
+      }
+    };
+    d.deck--;
+    const nEl = document.getElementById('baralho-n');
+    if (nEl && session) nEl.textContent = session.view().deckCount + d.deck;
+    if (!pile || !target) { arrive(); return; }
+    const a = pile.getBoundingClientRect(), b = target.getBoundingClientRect();
+    const g = document.createElement('div');
+    g.className = 'voo';
+    g.innerHTML = back();
+    g.style.left = a.left + 'px'; g.style.top = a.top + 'px'; g.style.width = a.width + 'px'; g.style.setProperty('--w', a.width + 'px');
+    document.body.appendChild(g);
+    const w = f.seat !== undefined ? 18 : b.width;
+    const dx = b.left + (f.seat !== undefined ? 18 : b.width / 2) - a.left - a.width / 2, dy = b.top + b.height / 2 - a.top - a.height / 2;
+    g.animate([{ transform: 'none' }, { transform: `translate(${dx}px,${dy}px) scale(${w / a.width})` }], { duration: d.dur, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'both' });
+    setTimeout(() => { g.remove(); arrive(); }, d.dur);
+  }
+  function announceLast(v) {
+    sfx.last();
+    const a = document.createElement('div');
+    a.className = 'anuncio';
+    a.innerHTML = '<b>Últimas cartas</b><span>O baralho acabou. As sobras vão para quem capturar por último.</span>';
+    a.setAttribute('role', 'status');
+    document.body.appendChild(a);
+    setTimeout(() => a.remove(), 2500);
   }
 
   function paintDynamic(v) {
     const side = E.sideOf(v.config, v.me);
     const myTurn = v.phase === 'play' && v.turn === v.me;
+    const dealing = !!ui.deal;
+    const canAct = myTurn && !dealing;
     const ctx = { hand: v.hand, table: v.table };
     // Limpa seleções que deixaram de fazer sentido.
     if (ui.card && !v.hand.includes(ui.card)) { ui.card = null; ui.sel.clear(); }
     for (const id of [...ui.sel]) if (!v.table.some(t => t.id === id)) ui.sel.delete(id);
-    if (!myTurn) { ui.card = null; ui.sel.clear(); }
+    if (!canAct) { ui.card = null; ui.sel.clear(); }
 
     // Mesa
     const hints = ui.card && prefs.hints ? E.captureHints(v.table, ui.card) : new Set();
@@ -570,20 +700,43 @@
       if (ui.sel.has(it.id)) cls.push('selecionado');
       if (lastIds.has(it.id)) cls.push('ultimo');
       const inner = it.k === 'b' ? monteHtml(it.value, it.locked, it.cards) : cardHtml(it.id);
-      return `<button class="${cls.join(' ')}" data-act="pick-table" data-id="${esc(it.id)}" ${myTurn && ui.card ? '' : 'disabled'} aria-pressed="${ui.sel.has(it.id)}">${inner}</button>`;
+      const hide = dealing && ui.deal.table.has(it.id) ? 'style="visibility:hidden"' : '';
+      return `<button class="${cls.join(' ')}" data-act="pick-table" data-id="${esc(it.id)}" ${canAct && ui.card ? '' : 'disabled'} ${hide} aria-pressed="${ui.sel.has(it.id)}">${inner}</button>`;
     }).join('') : '<p class="mesa-vazia">A mesa está vazia.</p>';
 
     // Mão
     document.getElementById('mao').innerHTML = v.hand.map(c =>
-      `<button class="mao-carta ${ui.card === c ? 'escolhida' : ''}" data-act="pick-hand" data-card-btn="${c}" ${myTurn ? '' : 'disabled'} aria-pressed="${ui.card === c}">${cardHtml(c)}</button>`).join('');
+      `<button class="mao-carta ${ui.card === c ? 'escolhida' : ''}" data-act="pick-hand" data-card-btn="${c}" ${canAct ? '' : 'disabled'} ${dealing && ui.deal.hand.has(c) ? 'style="visibility:hidden"' : ''} aria-pressed="${ui.card === c}">${cardHtml(c)}</button>`).join('');
 
     // Dados do próprio
     document.getElementById('eu-dados').textContent = capText(v, side);
     const linha = document.getElementById('eu-linha');
     linha.textContent = (v.config.teams ? 'A tua dupla: ' : 'Tu: ') + capText(v, side);
     linha.classList.toggle('vez', myTurn);
+    paintDeck(v);
     paintActions(v, ctx, myTurn);
+    paintLog(v);
     paintOverlay(v);
+  }
+
+  function paintDeck(v) {
+    const pending = ui.deal ? ui.deal.deck : 0;
+    const left = v.deckCount + pending;
+    const pile = document.getElementById('baralho');
+    document.getElementById('baralho-n').textContent = left;
+    pile.classList.toggle('sem-cartas', left === 0);
+    const perDeal = v.config.numPlayers * 4;
+    const al = document.getElementById('alerta');
+    al.className = 'alerta-baralho';
+    if (v.phase !== 'play' || ui.deal) { al.textContent = ''; return; }
+    if (v.deckCount === 0) {
+      al.classList.add('fim');
+      const who = v.lastCapturer === null || v.lastCapturer === undefined ? null : v.lastCapturer === v.me ? 'ti' : nameOf(v.lastCapturer, v);
+      al.textContent = 'Últimas cartas.' + (who ? ` As sobras vão para ${who}.` : '');
+    } else if (v.deckCount === perDeal) {
+      al.classList.add('quase');
+      al.textContent = 'Falta só 1 distribuição.';
+    } else al.textContent = '';
   }
 
   function actionLabel(a, nSel, table, ids) {
@@ -606,6 +759,7 @@
     const box = document.getElementById('acoes');
     ui.actions = [];
     if (v.phase !== 'play') { box.innerHTML = '<p>A ronda terminou.</p>'; return; }
+    if (ui.deal) { box.innerHTML = '<p>A distribuir as cartas.</p>'; return; }
     if (!myTurn) {
       const deadline = session.kind === 'online' && session.lobby && session.lobby.deadline;
       box.innerHTML = `<p>Vez de ${esc(nameOf(v.turn, v))}.${deadline ? ` <span class="relogio" data-deadline="${deadline}"></span>` : ''}</p>`;
@@ -697,7 +851,7 @@
       } else {
         actions = isHost ? '<button class="btn prim" data-act="next-round">Próxima ronda</button>' : '<p class="nota">A próxima ronda começa quando quem criou a sala avançar.</p>';
       }
-      html = `<div class="sobre"><div class="folha ${cls}"><h2>${esc(title)}</h2>${note}${scoreTable(v)}${left}<div class="folha-acoes">${actions}</div></div></div>`;
+      html = `<div class="sobre"><div class="folha ${cls}"><h2>${esc(title)}</h2>${note}${scoreTable(v)}${left}<div class="folha-acoes">${actions}</div><button class="link" data-act="toggle-log">Ver o histórico da ronda</button></div></div>`;
     }
     box.innerHTML = html;
     if (ui.chatOpen) { const l = box.querySelector('.chat-lista'); if (l) l.scrollTop = l.scrollHeight; }
@@ -764,9 +918,6 @@
         const r = moverSeat.getBoundingClientRect();
         const dx = r.left + r.width / 2 - now.left - now.width / 2, dy = r.top + r.height / 2 - now.top - now.height / 2;
         el.animate([{ transform: `translate(${dx}px,${dy}px) scale(.6)` }, { transform: 'none' }], { duration: dur, easing: 'cubic-bezier(.25,.8,.3,1)' });
-      } else if (before.size && v.hand.includes(id)) {
-        const i = v.hand.indexOf(id);
-        el.animate([{ transform: 'translateY(90px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: dur, delay: i * 70, easing: 'ease-out', fill: 'backwards' });
       }
     });
     // Cartas que saíram da mesa voam para o monte de quem capturou.
@@ -843,6 +994,11 @@
         { const wasOnline = session && session.kind === 'online'; session = null; go(wasOnline ? 'online' : 'menu'); }
         break;
       case 'toggle-menu': ui.menuOpen = !ui.menuOpen; paintOverlay(session.view()); break;
+      case 'toggle-log':
+        if (isWide()) { prefs.logOpen = !prefs.logOpen; applyPrefs(); } else ui.logDrawer = !ui.logDrawer;
+        ui.logStick = true;
+        paintLog(session.view());
+        break;
       case 'toggle-chat': ui.chatOpen = !ui.chatOpen; paintOverlay(session.view()); break;
       case 'join-public': { const n = needName(); if (n) await doJoin(t.dataset.code, ''); break; }
       case 'join-code': {
