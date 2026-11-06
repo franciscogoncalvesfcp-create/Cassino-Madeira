@@ -207,6 +207,39 @@ test('com monte próprio não se larga, se houver outra jogada', () => {
   assert.ok(E.enumerateMoves({ hand: ['7D', 'KS'], table: [own], player: 0 }).every(m => m.type !== 'trail'));
 });
 
+test('quem joga um 7 leva os montes de 7; a carta do monte não se gasta noutra coisa', () => {
+  const own = () => B('b1', 7, false, ['4H', '3H']);
+  // O exemplo: 7 na mão, monte de 7 e 7 solto
+  let ctx = { hand: ['7D', 'KS'], table: [own(), L('7C')], player: 0 };
+  no(ctx, { type: 'capture', card: '7D', take: ['7C'] });
+  ok(ctx, { type: 'capture', card: '7D', take: ['b1', '7C'] });
+  ok(ctx, { type: 'capture', card: '7D', take: ['b1'] }); // a parte solta continua opcional
+  assert.match(E.explainSelection(ctx, '7D', ['7C']), /levar também o monte/);
+  // Vale também para montes de outros e somas
+  no({ hand: ['7D'], table: [own(), L('4C'), L('3C')], player: 1 }, { type: 'capture', card: '7D', take: ['4C', '3C'] });
+  ok({ hand: ['7D'], table: [own(), L('4C'), L('3C')], player: 1 }, { type: 'capture', card: '7D', take: ['4C', '3C', 'b1'] });
+  // Um monte mais pequeno continua a ser opcional numa soma
+  ok({ hand: ['9D'], table: [B('b2', 6), L('6C'), L('3C')], player: 0 }, { type: 'capture', card: '9D', take: ['6C', '3C'] });
+  // A única carta que levanta o teu monte não pode ir para outro monte
+  ctx = { hand: ['7D', '9S'], table: [own(), L('2C')], player: 0 };
+  no(ctx, { type: 'build', card: '7D', take: ['2C'] });
+  ok({ hand: ['7D', '7S', '9S'], table: [own(), L('2C')], player: 0 }, { type: 'build', card: '7D', take: ['2C'] }); // tem outro 7
+  ok({ hand: ['7D', '9S'], table: [own(), L('2C')], player: 1 }, { type: 'build', card: '7D', take: ['2C'] }); // o monte não é dele
+  assert.ok(E.enumerateMoves(ctx).every(m => m.type === 'capture'));
+  // Subir o próprio monte com essa carta continua a poder ser
+  ok({ hand: ['3D', '6S'], table: [B('b1', 3, false, ['AH', '2H'])], player: 0 }, { type: 'raise', card: '3D', build: 'b1' });
+});
+
+test('dois setes ficam trancados; 3 + 4 sobe para 9 com um 2', () => {
+  const s = custom({ numPlayers: 2, target: 21 }, { turn: 0, hands: [['7S', '7D', 'KC'], ['2H', '9D', 'QC']], deck: ['3C', '4C'], table: [L('7C')] });
+  assert.ok(E.applyMove(s, 0, { type: 'call', card: '7S', take: ['7C'] }).ok);
+  const b = s.table[0];
+  assert.ok(b.locked);
+  assert.ok(!E.applyMove(s, 1, { type: 'raise', card: '2H', build: b.id }).ok, 'bloqueado');
+  ok({ hand: ['2H', '9D'], table: [B('b2', 7, false, ['3S', '4S'])] }, { type: 'raise', card: '2H', build: 'b2' });
+  no({ hand: ['2H', '9D'], table: [B('b2', 7, true, ['3S', '4S', '7S'])] }, { type: 'raise', card: '2H', build: 'b2' });
+});
+
 test('uma parceira não cria obrigação; montes de outros levantam-se', () => {
   const s = custom({ numPlayers: 4, teams: true, target: 21 }, { turn: 0, hands: [['4S', '7D'], ['7H', '2C'], ['KS', '9D'], ['QS', '8D']], deck: [], table: [L('3H')] });
   assert.ok(E.applyMove(s, 0, { type: 'build', card: '4S', take: ['3H'] }).ok);
@@ -413,7 +446,8 @@ test('actionsFor oferece as jogadas certas para a seleção', () => {
   const ctx = { hand: ['3S', '6D', '3C'], table: [L('3H'), B('b1', 3)] };
   const types = (card, sel) => E.actionsFor(ctx, card, sel).map(a => a.move.type).sort();
   assert.deepStrictEqual(types('3S', []), ['trail']);
-  assert.deepStrictEqual(types('3S', ['3H']), ['build', 'call', 'capture']);
+  assert.deepStrictEqual(types('3S', ['3H']), ['build', 'call']); // levar o 3 solto obriga a levar o monte de 3
+  assert.deepStrictEqual(types('3S', ['3H', 'b1']), ['capture', 'double']);
   assert.deepStrictEqual(types('3S', ['b1']), ['capture', 'double', 'raise']);
   assert.deepStrictEqual(types('6D', ['3H', 'b1']), ['capture']);
 });

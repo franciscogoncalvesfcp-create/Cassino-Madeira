@@ -29,7 +29,7 @@ window.CassinoRules = function (c, monte) {
 <h3>A jogada</h3>
 <p>Na tua vez, jogas exatamente uma carta. Com ela podes capturar, empilhar ou largar.</p>
 <h4>Capturar</h4>
-<p>A carta jogada leva as cartas do mesmo valor, os grupos de cartas soltas que somem esse valor, e os montes desse valor. Cada carta só serve num grupo. Podes levar só uma parte, e capturar nunca é obrigatório.</p>
+<p>A carta jogada leva as cartas do mesmo valor, os grupos de cartas soltas que somem esse valor, e os montes desse valor. Cada carta só serve num grupo. Podes levar só uma parte, e capturar não é obrigatório, mas se jogares uma carta para capturar, tens de levar todos os montes desse valor.</p>
 ${ex(c('8S') + seta + c('8D') + c('6C') + c('2H') + c('5S') + c('3D'), 'O 8 leva tudo: o 8, o grupo 6 + 2 e o grupo 5 + 3.')}
 <p>Um monte não trancado conta como uma carta do seu valor nas somas.</p>
 ${ex(c('9S') + seta + monte(6, false, ['4H', '2D']) + c('3C'), 'O 9 levanta o monte de 6 e o 3 solto.')}
@@ -45,7 +45,7 @@ ${ex(c('9S') + seta + monte(6, false, ['4H', '2D']) + c('3C'), 'O 9 levanta o mo
 <section id="r-montes">
 <h3>Montes</h3>
 <p>Para fazer ou alterar um monte, tens de ficar na mão, depois de jogar, com outra carta do valor final. Um monte usa sempre uma carta da tua mão, e nunca passa de 10.</p>
-<p>Até ser levantado, qualquer jogador pode levar, subir ou duplicar um monte, por isso quem empilha arrisca-se a ficar sem ele. Um monte é teu se foste o último a fazê-lo, subi-lo ou duplicá-lo.</p>
+<p>Até ser levantado, qualquer jogador pode levar, subir ou duplicar um monte, por isso quem empilha arrisca-se a ficar sem ele. Um monte é teu se foste o último a fazê-lo, subi-lo ou duplicá-lo. Se alguém o subir ou duplicar, deixa de ser teu. A última carta que levanta um monte teu só serve para o levantar.</p>
 <h4>Monte simples</h4>
 <p>Jogas uma carta sobre uma ou mais cartas soltas.</p>
 ${ex(c('4S') + seta + c('3H') + igual + monte(7, false, ['3H', '4S']), 'Tens de ter um 7 na mão. O monte fica a valer 7.')}
@@ -62,7 +62,7 @@ ${ex(c('5S') + seta + c('3H') + c('2D') + c('5C') + igual + monte(5, true, ['3H'
 <p>Jogas uma carta sobre cartas soltas do mesmo valor, e tens de ficar com outra igual na mão. Cria um monte trancado.</p>
 ${ex(c('6S') + seta + c('6H') + igual + monte(6, true, ['6H', '6S']), 'Tens de ter outro 6 na mão.')}
 <h4>Monte trancado</h4>
-<p>Não pode ser subido, nem entra em somas. Só se levanta com uma carta do valor do monte. Pode continuar a receber grupos do mesmo valor.</p>
+<p>Não pode ser subido, nem entra em somas: dois 7 empilhados ficam sempre 7, enquanto um monte de 3 + 4 ainda pode subir para 9 com um 2. Só se levanta com uma carta do valor do monte. Pode continuar a receber grupos do mesmo valor.</p>
 </section>
 
 <section id="r-fim">

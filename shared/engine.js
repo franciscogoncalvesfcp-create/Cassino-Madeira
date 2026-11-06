@@ -148,6 +148,14 @@
     return ownsPile(ctx) && enumerateMoves({ hand: ctx.hand, table: ctx.table }).some(m => m.type !== 'trail');
   }
 
+  // A última carta que levanta um monte teu não pode ser gasta noutra coisa.
+  function spendsReserve(ctx, m) {
+    if (ctx.player === undefined || m.type === 'capture' || m.type === 'trail') return false;
+    const v = VALUE[m.card];
+    if (v === null || holdsAfter(ctx.hand, m.card, v)) return false;
+    return ctx.table.some(t => t.k === 'b' && t.by === ctx.player && t.value === v && !(m.type === 'raise' && t.id === m.build));
+  }
+
   function lookup(ctx, ids) {
     const out = [], seen = new Set();
     for (const id of ids) {
@@ -167,6 +175,7 @@
     const take = Array.isArray(m.take) ? m.take : [];
     const items = lookup(ctx, take);
     if (!items) return fail('Essa carta já não está na mesa.');
+    if (spendsReserve(ctx, m)) return fail('Esse ' + v + ' é a carta que levanta o teu monte de ' + v + '. Só o podes jogar para o levantar.');
     switch (m.type) {
       case 'trail':
         if (take.length) return fail('Para largar, não escolhas cartas da mesa.');
@@ -192,6 +201,9 @@
         }
         if (!canPartition(values, v))
           return fail('Essas cartas não formam grupos de ' + v + '.');
+        // Não ficam montes para trás: quem joga um 7 leva todos os montes de 7.
+        if (ctx.table.some(t => t.k === 'b' && t.value === v && !take.includes(t.id)))
+          return { ok: false, code: 'pile', reason: 'Ao jogares um ' + v + ' tens de levar também o monte de ' + v + '.' };
         return { ok: true };
       }
       case 'build': {
@@ -541,6 +553,8 @@
   function explainSelection(ctx, card, selection) {
     const items = lookup(ctx, selection) || [];
     if (VALUE[card] === null) { const r = validateMove(ctx, { type: 'capture', card, take: selection }); return r.ok ? '' : r.reason; }
+    const pileMissing = validateMove(ctx, { type: 'capture', card, take: selection });
+    if (pileMissing.code === 'pile') return pileMissing.reason;
     const builds = items.filter(i => i.k === 'b');
     const attempts = [];
     if (builds.length === 1) {
@@ -599,8 +613,9 @@
         }
       }
     }
-    if (ownsPile(ctx) && moves.some(m => m.type !== 'trail')) return moves.filter(m => m.type !== 'trail');
-    return moves;
+    const legal = moves.filter(m => !spendsReserve(ctx, m));
+    if (ownsPile(ctx) && legal.some(m => m.type !== 'trail')) return legal.filter(m => m.type !== 'trail');
+    return legal;
   }
 
   return {

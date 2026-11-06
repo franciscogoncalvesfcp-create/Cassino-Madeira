@@ -47,6 +47,12 @@
     return 0.5 * pot; // subir
   }
 
+  // Quem joga um 7 tem de levar todos os montes de 7.
+  function withPiles(view, card, ids) {
+    const piles = view.table.filter(t => t.k === 'b' && t.value === VALUE[card] && !ids.includes(t.id)).map(t => t.id);
+    return ids.concat(piles);
+  }
+
   // --- Fácil: captura o óbvio, raramente monta, às vezes erra ---------------
   function easy(view, rng) {
     const ctx = { hand: view.hand, table: view.table, player: view.me };
@@ -55,14 +61,14 @@
     if (!distracted) {
       for (const c of hand) {
         const pair = view.table.filter(t => (t.k === 'c' ? RANK[t.id] === RANK[c] : VALUE[c] !== null && t.value === VALUE[c]));
-        if (pair.length) return { type: 'capture', card: c, take: [pair[0].id] };
+        if (pair.length) return { type: 'capture', card: c, take: withPiles(view, c, [pair[0].id]) };
       }
       for (const c of hand) {
         if (VALUE[c] === null) continue;
         for (let i = 0; i < view.table.length; i++) for (let j = i + 1; j < view.table.length; j++) {
           const a = view.table[i], b = view.table[j];
           if (a.k === 'c' && b.k === 'c' && VALUE[a.id] !== null && VALUE[b.id] !== null && VALUE[a.id] + VALUE[b.id] === VALUE[c])
-            return { type: 'capture', card: c, take: [a.id, b.id] };
+            return { type: 'capture', card: c, take: withPiles(view, c, [a.id, b.id]) };
         }
       }
       if (rng() < 0.08) {
