@@ -6,7 +6,7 @@ function seeded(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math
 for (const level of ['easy', 'medium', 'hard']) {
   test(`${level}: joga rondas completas só com jogadas legais em todos os formatos`, () => {
     const rng = seeded(11);
-    for (const cfg of [{ numPlayers: 2 }, { numPlayers: 3 }, { numPlayers: 4 }, { numPlayers: 4, teams: true }]) {
+    for (const cfg of [{ numPlayers: 2 }, { numPlayers: 3 }, { numPlayers: 4 }, { numPlayers: 4, teams: true }, { numPlayers: 6 }, { numPlayers: 6, teams: 3 }, { numPlayers: 6, teams: 2 }]) {
       const s = E.createMatch({ ...cfg, target: 'round' }, rng);
       while (s.phase === 'play') {
         const p = s.turn;

@@ -135,6 +135,11 @@ input::placeholder { color: var(--texto-2); opacity: .8; }
 .lugar { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: rgba(0,0,0,.16); border-radius: 5px; border-left: 5px solid transparent; min-width: 0; }
 .lugar.lado-0 { border-left-color: var(--sinal); }
 .lugar.lado-1 { border-left-color: var(--zarcao); }
+.lugar.lado-2 { border-left-color: var(--cal); }
+.equipas { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.equipa { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.equipa-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; min-height: 36px; }
+.equipa-topo h3 { font-size: 19px; }
 .lugar b { overflow-wrap: anywhere; }
 .lugar small { color: var(--texto-2); }
 .lugar-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -308,6 +313,7 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
 .quadro { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 15px; }
 .quadro th, .quadro td { padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.13); }
 .quadro th:first-child, .quadro td:first-child { text-align: left; }
+.quadro td:not(:first-child) { white-space: nowrap; }
 .quadro thead th { font-size: 14px; color: var(--texto-2); font-weight: 700; }
 .quadro tr.total td { font-weight: 700; border-bottom: 0; }
 .quadro tr.acumulado td { font-family: var(--display); color: var(--sinal); font-size: 19px; border-bottom: 0; font-weight: 400; }
@@ -341,3 +347,35 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
   .placar { order: 3; flex: 1 1 100%; justify-content: flex-start; gap: 4px 12px; font-size: 13px; }
   .placar span { max-width: 44vw; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* Muitos jogadores à mesa */
+.oponentes .assento { min-width: 0; }
+@media (max-width: 560px) {
+  .oponentes { gap: 4px; padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
+  .oponentes .assento { padding: 5px 6px; font-size: 12px; }
+  .oponentes .assento-nome { font-size: 13px; }
+  .oponentes .etiqueta { font-size: 10px; padding: 0 3px; margin-left: 2px; }
+}
+
+/* Pódio */
+.podio { display: flex; align-items: flex-end; justify-content: center; gap: 6px; padding-top: 8px; }
+.degrau-col { flex: 1 1 0; max-width: 170px; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 6px; text-align: center; }
+.degrau-nome { display: flex; flex-direction: column; font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; }
+.degrau-nome span { color: var(--texto-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.degrau { display: flex; align-items: flex-start; justify-content: center; padding-top: 6px; border-radius: 4px 4px 0 0; font-family: var(--display); font-size: 30px; color: var(--texto-escuro); transform-origin: bottom; }
+.pos-1 .degrau { height: 112px; background: linear-gradient(180deg, var(--sinal) 0 78%, var(--cal) 78% 84%, var(--zarcao) 84% 100%); }
+.pos-2 .degrau { height: 78px; background: linear-gradient(180deg, var(--cal) 0 70%, var(--sinal) 70% 78%, var(--zarcao) 78% 100%); }
+.pos-3 .degrau { height: 54px; background: linear-gradient(180deg, #d98a5e 0 62%, var(--cal) 62% 72%, var(--zarcao) 72% 100%); }
+.degrau-col[data-eu] .degrau-nome b { color: var(--sinal); }
+.podio.anima .degrau { animation: sobe 620ms cubic-bezier(.2,.9,.3,1.1) both; }
+.podio.anima .degrau-nome { animation: surge 320ms ease-out both; }
+.podio.anima .pos-3 .degrau { animation-delay: 150ms; } .podio.anima .pos-3 .degrau-nome { animation-delay: 650ms; }
+.podio.anima .pos-2 .degrau { animation-delay: 550ms; } .podio.anima .pos-2 .degrau-nome { animation-delay: 1050ms; }
+.podio.anima .pos-1 .degrau { animation-delay: 950ms; } .podio.anima .pos-1 .degrau-nome { animation-delay: 1500ms; }
+@keyframes sobe { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes surge { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.podio-resto { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: center; font-size: 14px; color: var(--texto-2); }
+.confetes { position: fixed; inset: 0; z-index: 60; overflow: hidden; pointer-events: none; }
+.confetes i { position: absolute; top: -14px; width: 8px; height: 13px; border-radius: 1px; animation: cai 2s linear both; }
+@keyframes cai { to { transform: translate(var(--x), 105vh) rotate(var(--r)); } }
+@media (prefers-reduced-motion: reduce) { .podio.anima .degrau, .podio.anima .degrau-nome { animation: none; } .confetes { display: none; } }

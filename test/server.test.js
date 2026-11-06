@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50'; process.env.DEAL_PAUSE_MS = '0';
+process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50'; process.env.DEAL_PAUSE_MS = '0'; process.env.CREATE_PER_MIN = '100';
 const { server, rooms } = require('../server/server.js');
 const E = require('../shared/engine.js');
 let base;
@@ -100,6 +100,60 @@ test('partida completa com 2 humanos e 2 bots em duplas: privacidade e validaç�
   assert.strictEqual(sa.last.view.result.score.length, 2);
   // Toda a stream de ambos: nunca enviou mãos alheias no início
   sa.close(); sb.close();
+});
+
+test('equipas: mudar livremente, trocar com bots, regras para equipas cheias', async () => {
+  const act = (token, action, extra) => post(`/api/rooms/${code}/action`, { token, action, ...extra });
+  const a = await post('/api/rooms', { nick: 'Ana', config: { numPlayers: 4, teams: true, target: 21 } });
+  const code = a.body.code;
+  const b = await post(`/api/rooms/${code}/join`, { nick: 'Rui' });
+  const room = rooms.get(code);
+  const names = () => room.seats.map(x => x && x.nick);
+  assert.deepStrictEqual(names(), ['Ana', 'Rui', null, null]);
+  // Rui (equipa 2) passa para a equipa da Ana
+  assert.strictEqual((await act(b.body.token, 'changeTeam', { team: 0 })).status, 200);
+  assert.deepStrictEqual(names(), ['Ana', null, 'Rui', null]);
+  // E volta
+  assert.strictEqual((await act(b.body.token, 'changeTeam', { team: 1 })).status, 200);
+  assert.deepStrictEqual(names().filter(Boolean), ['Ana', 'Rui']);
+  assert.strictEqual(room.seats.indexOf(room.seats.find(x => x && x.nick === 'Rui')) % 2, 1);
+  // Com um bot na equipa de destino, troca com ele
+  await act(a.body.token, 'addBot', { seat: 2, level: 'easy' });
+  const c = await post(`/api/rooms/${code}/join`, { nick: 'Eva' });
+  const bot = room.seats[2];
+  assert.strictEqual(room.seats.filter(Boolean).length, 4);
+  assert.strictEqual((await act(b.body.token, 'changeTeam', { team: 0 })).status, 200);
+  assert.strictEqual(room.seats[2].nick, 'Rui'); assert.ok(room.seats.includes(bot));
+  // Só quem criou a sala move os outros
+  assert.strictEqual((await act(c.body.token, 'changeTeam', { seat: 0, team: 1 })).status, 403);
+  // Equipa só com pessoas: quem não é anfitrião não entra; o anfitrião troca
+  await act(a.body.token, 'removeSeat', { seat: room.seats.indexOf(bot) });
+  const d = await post(`/api/rooms/${code}/join`, { nick: 'Tó' });
+  assert.strictEqual(room.seats.filter(Boolean).length, 4);
+  const eva = room.seats.findIndex(x => x.nick === 'Eva');
+  assert.strictEqual((await act(c.body.token, 'changeTeam', { team: (eva + 1) % 2 })).status, 409);
+  assert.strictEqual((await act(a.body.token, 'changeTeam', { seat: eva, team: (eva + 1) % 2 })).status, 200);
+  assert.strictEqual(room.seats.filter(Boolean).length, 4);
+  assert.strictEqual(room.seats.findIndex(x => x.nick === 'Eva') % 2, (eva + 1) % 2);
+  assert.ok(d.status === 200);
+  // Sem equipas, a ação é recusada
+  const sem = await post('/api/rooms', { nick: 'Ana', config: { numPlayers: 3 } });
+  assert.strictEqual((await post(`/api/rooms/${sem.body.code}/action`, { token: sem.body.token, action: 'changeTeam', team: 0 })).status, 400);
+});
+
+test('6 jogadores online e o valor da jogada chega ao motor', async () => {
+  const a = await post('/api/rooms', { nick: 'Ana', config: { numPlayers: 6, teams: 3, target: 'round' }, turnSeconds: 0 });
+  const code = a.body.code, room = rooms.get(code);
+  assert.strictEqual(room.seats.length, 6);
+  for (let i = 1; i < 6; i++) await post(`/api/rooms/${code}/action`, { token: a.body.token, action: 'addBot', seat: i, level: 'easy' });
+  assert.strictEqual((await post(`/api/rooms/${code}/action`, { token: a.body.token, action: 'start' })).status, 200);
+  await until(() => room.state.turn === 0);
+  room.state.hands[0] = ['5S', '5D', 'AC', 'KH'];
+  room.state.table = [{ k: 'c', id: '3H' }, { k: 'c', id: '2D' }, { k: 'c', id: '5C' }];
+  const r = await post(`/api/rooms/${code}/action`, { token: a.body.token, action: 'move', move: { type: 'call', card: '5S', take: ['3H', '2D', '5C'], value: 5 } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(room.state.table.find(t => t.k === 'b').value, 5);
+  await post(`/api/rooms/${code}/action`, { token: a.body.token, action: 'leave' });
 });
 
 test('jogador que perde a ligação: bot joga por ele e volta com o mesmo token', async () => {

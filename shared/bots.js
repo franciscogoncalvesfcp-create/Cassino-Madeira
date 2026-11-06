@@ -49,7 +49,7 @@
 
   // --- Fácil: captura o óbvio, raramente monta, às vezes erra ---------------
   function easy(view, rng) {
-    const ctx = { hand: view.hand, table: view.table };
+    const ctx = { hand: view.hand, table: view.table, player: view.me };
     const hand = E.shuffle(view.hand.slice(), rng);
     const distracted = rng() < 0.18;
     if (!distracted) {
@@ -70,12 +70,16 @@
         if (builds.length) return builds[Math.floor(rng() * builds.length)];
       }
     }
-    return { type: 'trail', card: hand[0] };
+    const trail = { type: 'trail', card: hand[0] };
+    if (E.validateMove(ctx, trail).ok) return trail;
+    // Tem um monte seu na mesa: não pode largar.
+    const ms = E.enumerateMoves(ctx);
+    return ms.find(m => m.type === 'capture') || ms[Math.floor(rng() * ms.length)];
   }
 
   // --- Médio: dá algum valor às cartas que pontuam e monta -------------------
   function medium(view, rng) {
-    const ms = E.enumerateMoves({ hand: view.hand, table: view.table }, itemWorth(0.6));
+    const ms = E.enumerateMoves({ hand: view.hand, table: view.table, player: view.me }, itemWorth(0.6));
     let best = ms[0], bs = -Infinity;
     for (const m of ms) {
       const s = scoreMove(view, m, 0.6) + (rng() - 0.5) * 0.25;
@@ -122,7 +126,7 @@
           if (g > bs) { bs = g; best = { type: 'trail', card: c }; }
         }
       }
-      E.applyMove(s, p, best);
+      if (!E.applyMove(s, p, best).ok) E.applyMove(s, p, E.enumerateMoves({ hand, table: s.table, player: p })[0]);
     }
   }
   const FAST_W = itemWorth(1);
@@ -136,7 +140,7 @@
 
   function hard(view, rng, opts) {
     const o = Object.assign({ sims: 200, candidates: 8, mistake: 0.05, budgetMs: 300 }, opts);
-    const ms = E.enumerateMoves({ hand: view.hand, table: view.table }, FAST_W);
+    const ms = E.enumerateMoves({ hand: view.hand, table: view.table, player: view.me }, FAST_W);
     if (ms.length === 1) return ms[0];
     const ranked = ms.map(m => ({ m, h: scoreMove(view, m, 1), sum: 0, n: 0 })).sort((a, b) => b.h - a.h);
     // Garante pelo menos um largar e uma montagem entre as candidatas.

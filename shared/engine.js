@@ -35,13 +35,17 @@
 
   // --- Configuração e início ---------------------------------------------
   function normalizeConfig(c) {
-    const numPlayers = [2, 3, 4].includes(+c.numPlayers) ? +c.numPlayers : 2;
-    const teams = numPlayers === 4 && !!c.teams;
+    // Só estes números dividem as 48 cartas certas (52 menos 4 na mesa) em mãos de 4.
+    const numPlayers = [2, 3, 4, 6].includes(+c.numPlayers) ? +c.numPlayers : 2;
+    let teams = 0;
+    if (numPlayers === 4 && c.teams) teams = 2;
+    if (numPlayers === 6 && c.teams) teams = +c.teams === 2 ? 2 : 3; // 2 trios ou 3 duplas
     const target = String(c.target) in TARGETS ? String(c.target) : '21';
     return { numPlayers, teams, target };
   }
-  function sideOf(cfg, p) { return cfg.teams ? p % 2 : p; }
-  function numSides(cfg) { return cfg.teams ? 2 : cfg.numPlayers; }
+  function numTeams(cfg) { return cfg.teams === true ? 2 : (cfg.teams || 0); } // true vem de jogos guardados antigos
+  function sideOf(cfg, p) { const t = numTeams(cfg); return t ? p % t : p; }
+  function numSides(cfg) { return numTeams(cfg) || cfg.numPlayers; }
 
   function createMatch(config, rng) {
     const cfg = normalizeConfig(config);
@@ -136,6 +140,14 @@
     return nextGroup();
   }
 
+  // Quem tem um monte seu na mesa só pode largar se não houver mais nenhuma jogada.
+  function ownsPile(ctx) {
+    return ctx.player !== undefined && ctx.table.some(t => t.k === 'b' && t.by === ctx.player);
+  }
+  function mustNotTrail(ctx) {
+    return ownsPile(ctx) && enumerateMoves({ hand: ctx.hand, table: ctx.table }).some(m => m.type !== 'trail');
+  }
+
   function lookup(ctx, ids) {
     const out = [], seen = new Set();
     for (const id of ids) {
@@ -158,6 +170,7 @@
     switch (m.type) {
       case 'trail':
         if (take.length) return fail('Para largar, não escolhas cartas da mesa.');
+        if (mustNotTrail(ctx)) return fail('Tens um monte teu na mesa, por isso não podes largar. Levanta-o, captura outra coisa ou empilha.');
         return { ok: true };
       case 'capture': {
         if (!take.length) return fail('Escolhe as cartas que queres levar.');
@@ -165,6 +178,8 @@
           for (const it of items)
             if (!isLoose(it) || RANK[it.id] !== RANK[m.card])
               return fail('Uma figura só leva figuras iguais soltas.');
+          if (items.length !== 1 && items.length !== 3)
+            return fail('Uma figura leva só uma figura igual, ou as três se estiverem todas na mesa.');
           return { ok: true };
         }
         const values = [];
@@ -181,7 +196,7 @@
       }
       case 'build': {
         if (v === null) return fail('As figuras não entram em montes.');
-        if (!take.length) return fail('Escolhe as cartas soltas onde queres montar.');
+        if (!take.length) return fail('Escolhe as cartas soltas onde queres empilhar.');
         let total = v;
         for (const it of items) {
           if (!isLoose(it)) return fail('Num monte novo só entram cartas soltas.');
@@ -190,7 +205,7 @@
         }
         if (total > 10) return fail('Um monte não pode passar de 10.');
         if (!holdsAfter(ctx.hand, m.card, total))
-          return fail('Para montar ' + total + ' precisas de ficar com um ' + total + ' na mão.');
+          return fail('Para empilhar ' + total + ' precisas de ficar com um ' + total + ' na mão.');
         return { ok: true, value: total };
       }
       case 'raise': {
@@ -208,25 +223,34 @@
         if (v === null) return fail('As figuras não entram em montes.');
         const b = ctx.table.find(t => t.id === m.build && t.k === 'b');
         if (!b) return fail('Esse monte já não está na mesa.');
-        let sum = v;
+        const vals = [v];
         for (const it of items) {
           if (!isLoose(it)) return fail('Só podes juntar cartas soltas a um monte.');
           if (VALUE[it.id] === null) return fail('As figuras não entram em montes.');
-          sum += VALUE[it.id];
+          vals.push(VALUE[it.id]);
         }
-        if (sum !== b.value) return fail('O grupo novo tem de valer ' + b.value + ', e vale ' + sum + '.');
+        if (!canPartition(vals, b.value)) return fail('Essas cartas não formam grupos de ' + b.value + '.');
         if (!holdsAfter(ctx.hand, m.card, b.value))
           return fail('Para duplicar precisas de ficar com um ' + b.value + ' na mão.');
         return { ok: true, value: b.value };
       }
       case 'call': {
         if (v === null) return fail('As figuras não entram em montes.');
-        if (!take.length) return fail('Escolhe a carta solta igual à tua.');
-        for (const it of items)
-          if (!isLoose(it) || VALUE[it.id] !== v) return fail('Só podes chamar sobre cartas soltas do mesmo valor.');
-        if (!holdsAfter(ctx.hand, m.card, v))
-          return fail('Para chamar ' + v + ' precisas de ficar com outro ' + v + ' na mão.');
-        return { ok: true, value: v };
+        // Monte trancado criado de uma vez: a carta jogada e as soltas formam dois ou mais grupos do mesmo valor.
+        if (!take.length) return fail('Escolhe as cartas soltas que entram no monte.');
+        const V = m.value === undefined ? v : +m.value;
+        if (!Number.isInteger(V) || V < 1 || V > 10) return fail('Um monte não pode passar de 10.');
+        const vals = [v];
+        for (const it of items) {
+          if (!isLoose(it)) return fail('Num monte novo só entram cartas soltas.');
+          if (VALUE[it.id] === null) return fail('As figuras não entram em montes.');
+          vals.push(VALUE[it.id]);
+        }
+        const total = vals.reduce((a, b) => a + b, 0);
+        if (total < 2 * V || !canPartition(vals, V)) return fail('Essas cartas não formam grupos de ' + V + '.');
+        if (!holdsAfter(ctx.hand, m.card, V))
+          return fail('Para empilhar ' + V + ' precisas de ficar com um ' + V + ' na mão.');
+        return { ok: true, value: V };
       }
       default:
         return fail('Jogada desconhecida.');
@@ -238,7 +262,7 @@
     if (s.phase !== 'play') return fail('A ronda já terminou.');
     if (s.turn !== player) return fail('Não é a tua vez.');
     const hand = s.hands[player];
-    const check = validateMove({ hand, table: s.table }, m);
+    const check = validateMove({ hand, table: s.table, player }, m);
     if (!check.ok) return check;
 
     const side = sideOf(s.config, player);
@@ -431,8 +455,16 @@
     const v = VALUE[card];
     if (v === null) {
       const same = table.filter(t => isLoose(t) && RANK[t.id] === RANK[card]);
-      return same.map(t => t.id);
+      if (same.length === 3) return same.map(t => t.id);
+      if (!same.length) return [];
+      const w = weight || (() => 1);
+      return [same.reduce((a, b) => (w(b) > w(a) ? b : a)).id];
     }
+    return coverIds(table, v, weight);
+  }
+
+  // Melhor conjunto de itens que formam grupos de valor v, cada um num só grupo.
+  function coverIds(table, v, weight) {
     const direct = [], parts = [];
     for (const t of table) {
       const iv = itemValue(t);
@@ -489,7 +521,13 @@
     const builds = items.filter(i => i.k === 'b');
     if (!builds.length) {
       tryMove({ type: 'build', card, take: sel });
-      tryMove({ type: 'call', card, take: sel });
+      const tried = new Set();
+      for (const c of ctx.hand) {
+        const V = VALUE[c];
+        if (c === card || V === null || tried.has(V)) continue;
+        tried.add(V);
+        tryMove({ type: 'call', card, take: sel, value: V });
+      }
     } else if (builds.length === 1) {
       const b = builds[0];
       const loose = sel.filter(id => id !== b.id);
@@ -502,6 +540,7 @@
   // Porque é que a seleção não dá nenhuma jogada (texto de ajuda).
   function explainSelection(ctx, card, selection) {
     const items = lookup(ctx, selection) || [];
+    if (VALUE[card] === null) { const r = validateMove(ctx, { type: 'capture', card, take: selection }); return r.ok ? '' : r.reason; }
     const builds = items.filter(i => i.k === 'b');
     const attempts = [];
     if (builds.length === 1) {
@@ -509,7 +548,7 @@
       if (!loose.length && !b.locked) attempts.push({ type: 'raise', card, build: b.id });
       attempts.push({ type: 'double', card, build: b.id, take: loose });
     } else if (!builds.length) {
-      if (items.length && items.every(i => VALUE[i.id] === VALUE[card])) attempts.push({ type: 'call', card, take: selection });
+      if (items.length && items.every(i => VALUE[i.id] === VALUE[card]) && VALUE[card] !== null) attempts.push({ type: 'call', card, take: selection });
       attempts.push({ type: 'build', card, take: selection });
     }
     attempts.unshift({ type: 'capture', card, take: selection });
@@ -533,30 +572,40 @@
       const looseNum = ctx.table.filter(t => isLoose(t) && VALUE[t.id] !== null);
       const looseVals = looseNum.map(t => VALUE[t.id]);
       const heldValues = new Set(ctx.hand.filter(c => c !== card).map(c => VALUE[c]).filter(x => x !== null));
+      const idsOf = m => looseNum.filter((_, i) => m & (1 << i)).map(t => t.id);
+      const extraGroups = (V, used) => coverIds(looseNum.filter(t => !used.includes(t.id)), V, weight);
       for (const V of heldValues) {
-        if (V > v) for (const m of sumSubsets(looseVals, V - v))
-          moves.push({ type: 'build', card, take: looseNum.filter((_, i) => m & (1 << i)).map(t => t.id) });
+        if (V > v) for (const m of sumSubsets(looseVals, V - v)) {
+          const base = idsOf(m);
+          moves.push({ type: 'build', card, take: base });
+          const extra = extraGroups(V, base);
+          if (extra.length) moves.push({ type: 'call', card, value: V, take: base.concat(extra) });
+        }
       }
       if (heldValues.has(v)) {
-        const same = looseNum.filter(t => VALUE[t.id] === v);
-        if (same.length) moves.push({ type: 'call', card, take: same.map(t => t.id) });
+        const extra = extraGroups(v, []);
+        if (extra.length) moves.push({ type: 'call', card, value: v, take: extra });
       }
       for (const b of ctx.table) {
         if (b.k !== 'b') continue;
         if (!b.locked && b.value + v <= 10 && heldValues.has(b.value + v)) moves.push({ type: 'raise', card, build: b.id });
         if (v <= b.value && heldValues.has(b.value)) {
-          if (v === b.value) moves.push({ type: 'double', card, build: b.id, take: [] });
-          else for (const m of sumSubsets(looseVals, b.value - v))
-            moves.push({ type: 'double', card, build: b.id, take: looseNum.filter((_, i) => m & (1 << i)).map(t => t.id) });
+          const bases = v === b.value ? [[]] : sumSubsets(looseVals, b.value - v).map(idsOf);
+          for (const base of bases) {
+            moves.push({ type: 'double', card, build: b.id, take: base });
+            const extra = extraGroups(b.value, base);
+            if (extra.length) moves.push({ type: 'double', card, build: b.id, take: base.concat(extra) });
+          }
         }
       }
     }
+    if (ownsPile(ctx) && moves.some(m => m.type !== 'trail')) return moves.filter(m => m.type !== 'trail');
     return moves;
   }
 
   return {
     SUITS, RANKS, ALL_CARDS, VALUE, RANK, SUIT, CATEGORY_ORDER,
-    shuffle, normalizeConfig, sideOf, numSides, createMatch, nextRound, applyMove, validateMove,
+    shuffle, normalizeConfig, numTeams, sideOf, numSides, createMatch, nextRound, applyMove, validateMove,
     actionsFor, explainSelection, captureHints, bestCapture, enumerateMoves, scoreRound, publicView, botView,
     cloneState, itemValue, deal,
   };

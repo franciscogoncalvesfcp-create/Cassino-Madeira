@@ -18,7 +18,7 @@ test('baralho: 52 cartas únicas e figuras sem valor', () => {
   assert.strictEqual(E.VALUE.JS, null); assert.strictEqual(E.VALUE.KH, null);
 });
 
-for (const [cfg, deals] of [[{ numPlayers: 2 }, 6], [{ numPlayers: 3 }, 4], [{ numPlayers: 4 }, 3], [{ numPlayers: 4, teams: true }, 3]]) {
+for (const [cfg, deals] of [[{ numPlayers: 2 }, 6], [{ numPlayers: 3 }, 4], [{ numPlayers: 4 }, 3], [{ numPlayers: 4, teams: true }, 3], [{ numPlayers: 6 }, 2], [{ numPlayers: 6, teams: 3 }, 2], [{ numPlayers: 6, teams: 2 }, 2]]) {
   test(`distribuição ${cfg.numPlayers}j${cfg.teams ? ' duplas' : ''}: ${deals} distribuições`, () => {
     const s = E.createMatch({ ...cfg, target: 'round' }, seeded(5));
     assert.strictEqual(s.table.length, 4);
@@ -48,8 +48,13 @@ test('captura: emparelhamento, somas, composta, parcial', () => {
   no(ctx, { type: 'capture', card: '8S', take: ['6C', '2H', '5S'] });
   no(ctx, { type: 'capture', card: '8S', take: [] });
   no(ctx, { type: 'capture', card: '8S', take: ['KS'] });
-  ok(ctx, { type: 'capture', card: 'KH', take: ['KS', 'KD'] });
+  no(ctx, { type: 'capture', card: 'KH', take: ['KS', 'KD'] }); // duas figuras com uma não
   ok(ctx, { type: 'capture', card: 'KH', take: ['KS'] });
+  ok({ hand: ['KH'], table: [L('KS'), L('KD'), L('KC')] }, { type: 'capture', card: 'KH', take: ['KS', 'KD', 'KC'] });
+  no({ hand: ['KH'], table: [L('KS'), L('KD'), L('KC')] }, { type: 'capture', card: 'KH', take: ['KS', 'KD'] });
+  ok({ hand: ['KH'], table: [L('KS'), L('KD'), L('KC')] }, { type: 'capture', card: 'KH', take: ['KS'] });
+  assert.strictEqual(E.bestCapture([L('KS'), L('KD')], 'KH').length, 1);
+  assert.strictEqual(E.bestCapture([L('KS'), L('KD'), L('KC')], 'KH').length, 3);
   no(ctx, { type: 'capture', card: 'KH', take: ['8D'] });
 });
 
@@ -137,12 +142,88 @@ test('monte trancado aceita outro grupo do mesmo valor', () => {
   ok({ hand: ['5S', '7D'], table: [B('b1', 7, true), L('2H')] }, { type: 'double', card: '5S', build: 'b1', take: ['2H'] });
 });
 
-test('não há proibição de largar com monte na mesa; montes da mesa podem ser levantados por outro', () => {
-  const s = custom({ numPlayers: 2, target: 21 }, { turn: 0, hands: [['4S', '7D'], ['7H', '2C']], deck: ['2D','3D','4D','5D'], table: [L('3H')] });
+test('o exemplo do Francisco: 5 da mão com 3, 2 e 5 da mesa, ficando com outro 5', () => {
+  const s = custom({ numPlayers: 2, target: 21 }, { turn: 0, hands: [['5S', '5D', 'AC'], ['8H']], deck: ['2C', '3C'], table: [L('3H'), L('2D'), L('5C')] });
+  const acts = E.actionsFor({ hand: s.hands[0], table: s.table }, '5S', ['3H', '2D', '5C']);
+  assert.ok(acts.some(a => a.move.type === 'call' && a.value === 5));
+  const r = E.applyMove(s, 0, { type: 'call', card: '5S', take: ['3H', '2D', '5C'], value: 5 });
+  assert.ok(r.ok, r.reason);
+  const b = s.table[0];
+  assert.ok(b.locked); assert.strictEqual(b.value, 5);
+  assert.deepStrictEqual(b.cards.slice().sort(), ['2D', '3H', '5C', '5S']);
+  assert.strictEqual(s.table.length, 1);
+  // depois levanta com o outro 5
+  s.hands[1].push('9C'); s.turn = 0;
+  assert.ok(E.applyMove(s, 0, { type: 'capture', card: '5D', take: [b.id] }).ok);
+});
+
+test('monte trancado de uma vez: variantes e recusas', () => {
+  // A carta da mão pode fazer parte de uma soma: 2 da mão + 3, mais 5 solto, ficando com um 5
+  ok({ hand: ['2S', '5D'], table: [L('3H'), L('5C')] }, { type: 'call', card: '2S', take: ['3H', '5C'], value: 5 });
+  // Sem o 5 na mão não dá
+  no({ hand: ['5S', '9D'], table: [L('3H'), L('2C')] }, { type: 'call', card: '5S', take: ['3H', '2C'], value: 5 });
+  // Sobra uma carta sem grupo
+  no({ hand: ['5S', '5D'], table: [L('3H'), L('2C'), L('AC')] }, { type: 'call', card: '5S', take: ['3H', '2C', 'AC'], value: 5 });
+  // Figuras e montes não entram
+  no({ hand: ['5S', '5D'], table: [L('5H'), L('KC')] }, { type: 'call', card: '5S', take: ['5H', 'KC'], value: 5 });
+  no({ hand: ['5S', '5D'], table: [B('b1', 5)] }, { type: 'call', card: '5S', take: ['b1'], value: 5 });
+  // Um grupo só é um monte simples, não trancado
+  no({ hand: ['2S', '5D'], table: [L('3H')] }, { type: 'call', card: '2S', take: ['3H'], value: 5 });
+  // Chamar continua igual
+  ok({ hand: ['6S', '6D'], table: [L('6H')] }, { type: 'call', card: '6S', take: ['6H'] });
+  // A um monte existente também se juntam vários grupos
+  ok({ hand: ['5S', '5D'], table: [B('b1', 5), L('3H'), L('2C'), L('5C')] }, { type: 'double', card: '5S', build: 'b1', take: ['3H', '2C', '5C'] });
+  no({ hand: ['5S', '5D'], table: [B('b1', 5), L('3H')] }, { type: 'double', card: '5S', build: 'b1', take: ['3H'] });
+  // Os bots também veem esta jogada
+  const ms = E.enumerateMoves({ hand: ['5S', '5D'], table: [L('3H'), L('2C'), L('5C')] });
+  assert.ok(ms.some(m => m.type === 'call' && m.value === 5 && m.take.length === 3));
+});
+
+test('com monte próprio não se larga, se houver outra jogada', () => {
+  const own = B('b1', 7, false, ['4H', '3H']);
+  // Só pode levantar o monte ou largar: é obrigado a levantar
+  let ctx = { hand: ['7D', 'KS'], table: [own], player: 0 };
+  no(ctx, { type: 'trail', card: 'KS' });
+  no(ctx, { type: 'trail', card: '7D' });
+  ok(ctx, { type: 'capture', card: '7D', take: ['b1'] });
+  // Pode capturar outra coisa em vez do monte
+  ctx = { hand: ['7D', 'KS'], table: [own, L('KC')], player: 0 };
+  ok(ctx, { type: 'capture', card: 'KS', take: ['KC'] });
+  no(ctx, { type: 'trail', card: 'KS' });
+  // Pode preparar outro monte
+  ctx = { hand: ['7D', '2S', '5C'], table: [own, L('3D')], player: 0 };
+  ok(ctx, { type: 'build', card: '2S', take: ['3D'] });
+  no(ctx, { type: 'trail', card: '2S' });
+  // O monte de outro jogador não obriga a nada
+  ok({ hand: ['7D', 'KS'], table: [own], player: 1 }, { type: 'trail', card: 'KS' });
+  // Quem subir o monte passa a ser o dono
+  const s = custom({ numPlayers: 2, target: 21 }, { turn: 1, hands: [['7D', 'KS', '2C'], ['AS', '8D', '3C']], deck: ['9C','9D'], table: [B('b1', 7, false, ['4H', '3H'])] });
+  assert.ok(E.applyMove(s, 1, { type: 'raise', card: 'AS', build: 'b1' }).ok);
+  assert.ok(E.applyMove(s, 0, { type: 'trail', card: 'KS' }).ok, 'o antigo dono já pode largar');
+  assert.ok(!E.applyMove(s, 1, { type: 'trail', card: '3C' }).ok, 'o novo dono não pode');
+  // Sem nenhuma alternativa (gastou a carta), pode largar: nunca há bloqueio
+  ok({ hand: ['KS'], table: [own], player: 0 }, { type: 'trail', card: 'KS' });
+  assert.deepStrictEqual(E.enumerateMoves({ hand: ['KS'], table: [own], player: 0 }).map(m => m.type), ['trail']);
+  assert.ok(E.enumerateMoves({ hand: ['7D', 'KS'], table: [own], player: 0 }).every(m => m.type !== 'trail'));
+});
+
+test('uma parceira não cria obrigação; montes de outros levantam-se', () => {
+  const s = custom({ numPlayers: 4, teams: true, target: 21 }, { turn: 0, hands: [['4S', '7D'], ['7H', '2C'], ['KS', '9D'], ['QS', '8D']], deck: [], table: [L('3H')] });
   assert.ok(E.applyMove(s, 0, { type: 'build', card: '4S', take: ['3H'] }).ok);
-  assert.ok(E.applyMove(s, 1, { type: 'capture', card: '7H', take: [s.table[0].id] }).ok); // rouba
+  assert.ok(E.applyMove(s, 1, { type: 'capture', card: '7H', take: [s.table[0].id] }).ok, 'rouba');
   assert.strictEqual(s.captured[1].length, 3);
-  assert.ok(E.applyMove(s, 0, { type: 'trail', card: '7D' }).ok); // criador pode largar
+  assert.ok(E.applyMove(s, 2, { type: 'trail', card: 'KS' }).ok);
+});
+
+test('6 jogadores: equipas certas e pontos somados', () => {
+  assert.deepStrictEqual([0,1,2,3,4,5].map(p => E.sideOf({ numPlayers: 6, teams: 3 }, p)), [0,1,2,0,1,2]);
+  assert.deepStrictEqual([0,1,2,3,4,5].map(p => E.sideOf({ numPlayers: 6, teams: 2 }, p)), [0,1,0,1,0,1]);
+  assert.strictEqual(E.numSides(E.normalizeConfig({ numPlayers: 6, teams: 3 })), 3);
+  assert.strictEqual(E.numSides(E.normalizeConfig({ numPlayers: 6, teams: 2 })), 2);
+  assert.strictEqual(E.numSides(E.normalizeConfig({ numPlayers: 6 })), 6);
+  assert.strictEqual(E.normalizeConfig({ numPlayers: 5 }).numPlayers, 2, '5 não é aceite');
+  assert.strictEqual(E.normalizeConfig({ numPlayers: 3, teams: 2 }).teams, 0);
+  assert.strictEqual(E.sideOf({ numPlayers: 4, teams: true }, 3), 1, 'jogos guardados antigos');
 });
 
 test('não se pode jogar fora da vez', () => {
@@ -266,11 +347,11 @@ test('dador roda no sentido horário', () => {
 test('jogadas enumeradas são sempre legais; cartas conservam-se em 300 rondas', () => {
   const rng = seeded(77);
   for (let g = 0; g < 300; g++) {
-    const n = [2, 3, 4][g % 3];
-    const s = E.createMatch({ numPlayers: n, teams: n === 4 && g % 2 === 0, target: 'round' }, rng);
+    const n = [2, 3, 4, 6][g % 4];
+    const s = E.createMatch({ numPlayers: n, teams: n >= 4 && g % 8 < 4 ? (n === 6 ? 3 : 2) : 0, target: 'round' }, rng);
     while (s.phase === 'play') {
       const p = s.turn;
-      const ctx = { hand: s.hands[p], table: s.table };
+      const ctx = { hand: s.hands[p], table: s.table, player: p };
       const ms = E.enumerateMoves(ctx);
       assert.ok(ms.length > 0);
       for (const m of ms) assert.ok(E.validateMove(ctx, m).ok, JSON.stringify(m) + E.validateMove(ctx, m).reason);

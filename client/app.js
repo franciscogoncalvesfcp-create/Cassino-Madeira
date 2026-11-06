@@ -157,20 +157,29 @@
     { v: '2', t: '2 jogadores', d: 'Um contra um' },
     { v: '3', t: '3 jogadores', d: 'Todos contra todos' },
     { v: '4', t: '4 jogadores', d: 'Todos contra todos' },
-    { v: '4t', t: '4 em duplas', d: 'Tu e o jogador à frente' },
+    { v: '6', t: '6 jogadores', d: 'Todos contra todos' },
+    { v: '4t', t: '4 em duplas', d: '2 equipas de 2' },
+    { v: '6d', t: '6 em duplas', d: '3 equipas de 2' },
+    { v: '6t', t: '6 em trios', d: '2 equipas de 3' },
   ];
+  const MODE_TEAMS = { '4t': 2, '6d': 3, '6t': 2 };
+  function modeName(c) {
+    const t = E.numTeams(c);
+    if (!t) return c.numPlayers + ' jogadores';
+    return c.numPlayers / t === 2 ? `${c.numPlayers} em duplas` : `${c.numPlayers} em trios`;
+  }
   const TARGETS = [
     { v: 'round', t: 'Uma ronda', d: 'Partida rápida' },
     { v: '21', t: '21 pontos', d: 'Partida padrão' },
     { v: '32', t: '32 pontos', d: 'Partida longa' },
   ];
   const LEVELS = [
-    { v: 'easy', t: 'Fácil', d: 'Apanha o óbvio, raramente monta e às vezes distrai-se.' },
-    { v: 'medium', t: 'Médio', d: 'Dá valor ao 10 de Ouros, ao 2 de Espadas, aos ases e às espadas, e monta.' },
+    { v: 'easy', t: 'Fácil', d: 'Apanha o óbvio, raramente empilha e às vezes distrai-se.' },
+    { v: 'medium', t: 'Médio', d: 'Dá valor ao 10 de Ouros, ao 2 de Espadas, aos ases e às espadas, e empilha.' },
     { v: 'hard', t: 'Difícil', d: 'Lembra-se das cartas que saíram e simula jogadas futuras. Às vezes também erra.' },
   ];
   const LEVEL_NAME = { easy: 'Fácil', medium: 'Médio', hard: 'Difícil' };
-  const modeToCfg = (mode, target) => ({ numPlayers: parseInt(mode, 10), teams: mode === '4t', target });
+  const modeToCfg = (mode, target) => ({ numPlayers: parseInt(mode, 10), teams: MODE_TEAMS[mode] || 0, target });
 
   function renderOffline() {
     app.innerHTML = `<div class="pagina tabuas">${topo('Jogar contra bots', 'menu')}
@@ -205,7 +214,7 @@
   }
 
   // --- Sessão local ----------------------------------------------------------
-  const BOT_NAMES = ['Zita', 'Agostinho', 'Conceição'];
+  const BOT_NAMES = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil', 'Lurdes'];
   function LocalSession(state, level, names) {
     this.kind = 'local'; this.state = state; this.level = level; this.names = names; this.timer = null;
     this.seats = names.map((n, i) => ({ nick: n, isBot: i !== 0, connected: true }));
@@ -356,7 +365,7 @@
   function paintRooms() {
     const box = document.getElementById('lista-salas');
     if (!box) return;
-    const modeTxt = c => (c.teams ? '4 em duplas' : c.numPlayers + ' jogadores');
+    const modeTxt = modeName;
     const tgt = c => (c.target === 'round' ? 'uma ronda' : c.target + ' pontos');
     if (online.err) { box.innerHTML = `<p class="erro">${esc(online.err)}</p>`; return; }
     if (!online.rooms.length) { box.innerHTML = '<div class="vazio">Não há salas públicas abertas. Cria uma e partilha o link com os teus amigos.</div>'; return; }
@@ -427,23 +436,34 @@
     const isHost = L.you.isHost;
     const link = location.origin + location.pathname + '?sala=' + L.code;
     const filled = L.seats.every(Boolean);
+    const teams = E.numTeams(L.config);
     const seat = (x, i) => {
-      const side = L.config.teams ? i % 2 : -1;
+      const side = teams ? i % teams : -1;
       const mine = i === L.you.seat;
-      if (!x) return `<div class="lugar lado-${side}"><b>Lugar livre</b>${L.config.teams ? `<small>${side === 0 ? 'Dupla 1' : 'Dupla 2'}</small>` : '<small>À espera de jogador</small>'}
-        <div class="lugar-acoes"><button class="btn peq" data-act="seat" data-seat="${i}">Sentar aqui</button>
-        ${isHost ? `<button class="btn peq" data-act="add-bot" data-seat="${i}" data-level="easy">Bot fácil</button><button class="btn peq" data-act="add-bot" data-seat="${i}" data-level="medium">Médio</button><button class="btn peq" data-act="add-bot" data-seat="${i}" data-level="hard">Difícil</button>` : ''}</div></div>`;
+      const botBtns = isHost ? `<button class="btn peq" data-act="add-bot" data-seat="${i}" data-level="easy">Bot fácil</button><button class="btn peq" data-act="add-bot" data-seat="${i}" data-level="medium">Médio</button><button class="btn peq" data-act="add-bot" data-seat="${i}" data-level="hard">Difícil</button>` : '';
+      if (!x) return `<div class="lugar lado-${side}"><b>Lugar livre</b><small>À espera de jogador</small>
+        <div class="lugar-acoes"><button class="btn peq" data-act="seat" data-seat="${i}">Sentar aqui</button>${botBtns}</div></div>`;
+      const moves = [];
+      if (isHost && !mine) moves.push(`<button class="btn peq" data-act="remove-seat" data-seat="${i}">${x.isBot ? 'Tirar bot' : 'Expulsar'}</button>`);
+      if (teams && isHost && !mine) for (let t = 0; t < teams; t++) if (t !== side) moves.push(`<button class="btn peq" data-act="change-team" data-seat="${i}" data-team="${t}">Pôr na equipa ${t + 1}</button>`);
       return `<div class="lugar lado-${side}"><b>${esc(x.nick)}${mine ? ' (tu)' : ''}</b>
-        <small>${x.isBot ? 'Bot ' + esc(LEVEL_NAME[x.level] || '') : x.connected ? (x.isHost ? 'Anfitrião' : 'Ligado') : 'Sem ligação'}${L.config.teams ? (side === 0 ? ', dupla 1' : ', dupla 2') : ''}</small>
-        ${isHost && !mine ? `<div class="lugar-acoes"><button class="btn peq" data-act="remove-seat" data-seat="${i}">${x.isBot ? 'Tirar bot' : 'Expulsar'}</button></div>` : ''}</div>`;
+        <small>${x.isBot ? 'Bot ' + esc(LEVEL_NAME[x.level] || '') : x.connected ? (x.isHost ? 'Anfitrião' : 'Ligado') : 'Sem ligação'}</small>
+        ${moves.length ? `<div class="lugar-acoes">${moves.join('')}</div>` : ''}</div>`;
     };
+    const seatsHtml = teams
+      ? `<div class="equipas">${Array.from({ length: teams }, (_, t) => {
+          const mineHere = L.you.seat % teams === t;
+          const list = L.seats.map((x, i) => [x, i]).filter(([, i]) => i % teams === t);
+          return `<div class="equipa lado-${t}"><div class="equipa-topo"><h3>Equipa ${t + 1}</h3>${mineHere ? '<span class="etiqueta parceiro">A tua</span>' : `<button class="btn peq prim" data-act="change-team" data-team="${t}">Mudar para esta equipa</button>`}</div>${list.map(([x, i]) => seat(x, i)).join('')}</div>`;
+        }).join('')}</div>`
+      : `<div class="lugares">${L.seats.map(seat).join('')}</div>`;
     const tgtTxt = L.config.target === 'round' ? 'uma ronda' : L.config.target + ' pontos';
     app.innerHTML = `<div class="pagina tabuas">${topo(L.name, 'leave-room')}
       <div class="pagina-corpo">
         <div class="bloco"><span class="rotulo">Código da sala</span><div class="codigo">${esc(L.code)}</div>
-          <p class="nota">${L.visibility === 'private' ? 'Sala privada. Envia o link e a password aos teus amigos.' : 'Sala pública. Também aparece na lista de salas.'} ${L.config.teams ? '4 em duplas' : L.config.numPlayers + ' jogadores'}, ${esc(tgtTxt)}${L.turnSeconds ? `, ${L.turnSeconds} segundos por jogada` : ', sem limite de tempo'}.</p>
+          <p class="nota">${L.visibility === 'private' ? 'Sala privada. Envia o link e a password aos teus amigos.' : 'Sala pública. Também aparece na lista de salas.'} ${esc(modeName(L.config))}, ${esc(tgtTxt)}${L.turnSeconds ? `, ${L.turnSeconds} segundos por jogada` : ', sem limite de tempo'}.</p>
           <div class="acoes-fim"><button class="btn peq" data-act="copy" data-text="${esc(link)}">Copiar link de convite</button></div></div>
-        <div class="bloco"><h3>Lugares</h3><div class="lugares">${L.seats.map(seat).join('')}</div></div>
+        <div class="bloco"><h3>${teams ? 'Equipas' : 'Lugares'}</h3>${seatsHtml}</div>
         <div class="acoes-fim">${isHost ? `<button class="btn prim" data-act="start-online" ${filled ? '' : 'disabled'}>Começar partida</button>${filled ? '' : '<p class="nota">Espera por amigos ou preenche os lugares vazios com bots.</p>'}` : '<p>Quem criou a sala começa a partida.</p>'}</div>
         <div class="bloco chat"><h3>Conversa</h3>${chatHtml(L)}</div>
       </div></div>`;
@@ -459,7 +479,7 @@
   const ui = {
     card: null, sel: new Set(), chatOpen: false, menuOpen: false, logDrawer: false, logStick: true,
     deal: null, dealSig: '', dealToken: 0, dealingUntil: 0,
-    reset() { this.card = null; this.sel = new Set(); this.chatOpen = false; this.menuOpen = false; this.logDrawer = false; this.logStick = true; this.deal = null; this.dealSig = ''; this.dealToken++; this.dealingUntil = 0; lastMoveSig = ''; },
+    reset() { this.card = null; this.sel = new Set(); this.chatOpen = false; this.menuOpen = false; this.logDrawer = false; this.logStick = true; this.podiumKey = null; this.deal = null; this.dealSig = ''; this.dealToken++; this.dealingUntil = 0; lastMoveSig = ''; },
   };
   let lastMoveSig = '';
 
@@ -470,8 +490,14 @@
   }
   function sideName(side, v) {
     const cfg = v.config;
-    if (!cfg.teams) return nameOf(side, v);
-    return side === E.sideOf(cfg, v.me) ? 'A tua dupla' : 'Adversários';
+    const t = E.numTeams(cfg);
+    if (!t) return nameOf(side, v);
+    if (side === E.sideOf(cfg, v.me)) return 'A tua equipa';
+    return t === 2 ? 'Adversários' : `Equipa ${side + 1}`;
+  }
+  function isPureCall(m) {
+    const V = m.value === undefined ? E.VALUE[m.card] : m.value;
+    return E.VALUE[m.card] === V && (m.take || []).every(c => E.VALUE[c] === V);
   }
   function moveText(m, v, detail) {
     if (!m) return '';
@@ -484,8 +510,8 @@
         const cl = m.sweep ? ' <span class="clareza">Clareza!</span>' : '';
         return (me ? `Levaste ${list(m.take)} com ${mini(m.card)}` : `${n} levou ${list(m.take)} com ${mini(m.card)}`) + cl;
       }
-      case 'build': return (me ? `Montaste ${m.value}` : `${n} montou ${m.value}`) + (detail ? ` com ${mini(m.card)} sobre ${list(m.take)}` : '');
-      case 'call': return (me ? `Chamaste ${m.value}` : `${n} chamou ${m.value}`) + (detail ? ` com ${mini(m.card)} sobre ${list(m.take)}` : '');
+      case 'build': return (me ? `Empilhaste ${m.value}` : `${n} empilhou ${m.value}`) + (detail ? ` com ${mini(m.card)} sobre ${list(m.take)}` : '');
+      case 'call': return (isPureCall(m) ? (me ? `Chamaste ${m.value}` : `${n} chamou ${m.value}`) : (me ? `Empilhaste ${m.value} trancado` : `${n} empilhou ${m.value} trancado`)) + (detail ? ` com ${mini(m.card)} sobre ${list(m.take)}` : '');
       case 'raise': return (me ? `Subiste o monte para ${m.value}` : `${n} subiu o monte para ${m.value}`) + (detail ? ` com ${mini(m.card)}` : '');
       case 'double': return (me ? `Duplicaste o monte de ${m.value}` : `${n} duplicou o monte de ${m.value}`) + (detail ? ` com ${list([m.card].concat(m.take))}` : '');
     }
@@ -503,7 +529,7 @@
     const backs = Array.from({ length: Math.max(0, v.handCounts[p] - (ui.deal ? ui.deal.seats[p] || 0 : 0)) }, () => back()).join('');
     const off = x && !x.isBot && x.connected === false;
     return `<div class="assento ${v.turn === p && v.phase === 'play' ? 'vez' : ''} ${off ? 'fora' : ''}" data-seat="${p}">
-      <div class="assento-nome">${esc(nameOf(p, v))}${v.dealer === p ? '<span class="etiqueta" title="Dador">Dá</span>' : ''}${partner ? '<span class="etiqueta parceiro">Dupla</span>' : ''}</div>
+      <div class="assento-nome">${esc(nameOf(p, v))}${v.dealer === p ? '<span class="etiqueta" title="Dador">Dá</span>' : ''}${partner ? '<span class="etiqueta parceiro">Equipa</span>' : ''}</div>
       <div class="costas-fila" aria-label="${v.handCounts[p]} cartas na mão">${backs}</div>
       <div class="assento-dados">${capText(v, side)}${off ? ', sem ligação' : ''}</div>
     </div>`;
@@ -679,7 +705,7 @@
     const myTurn = v.phase === 'play' && v.turn === v.me;
     const dealing = !!ui.deal;
     const canAct = myTurn && !dealing;
-    const ctx = { hand: v.hand, table: v.table };
+    const ctx = { hand: v.hand, table: v.table, player: v.me };
     // Limpa seleções que deixaram de fazer sentido.
     if (ui.card && !v.hand.includes(ui.card)) { ui.card = null; ui.sel.clear(); }
     for (const id of [...ui.sel]) if (!v.table.some(t => t.id === id)) ui.sel.delete(id);
@@ -711,7 +737,7 @@
     // Dados do próprio
     document.getElementById('eu-dados').textContent = capText(v, side);
     const linha = document.getElementById('eu-linha');
-    linha.textContent = (v.config.teams ? 'A tua dupla: ' : 'Tu: ') + capText(v, side);
+    linha.textContent = (E.numTeams(v.config) ? 'A tua equipa: ' : 'Tu: ') + capText(v, side);
     linha.classList.toggle('vez', myTurn);
     paintDeck(v);
     paintActions(v, ctx, myTurn);
@@ -746,8 +772,11 @@
         const n = table.filter(t => ids.has(t.id)).reduce((x, t) => x + (t.k === 'b' ? t.cards.length : 1), 0);
         return `Levar ${n} ${n === 1 ? 'carta' : 'cartas'}`;
       }
-      case 'build': return `Montar ${a.value}`;
-      case 'call': return `Chamar ${a.value}`;
+      case 'build': return `Empilhar ${a.value}`;
+      case 'call': {
+        const cards = table.filter(t => ids.has(t.id)).map(t => t.id);
+        return isPureCall({ card: m.card, value: a.value, take: cards }) ? `Chamar ${a.value}` : `Empilhar ${a.value} trancado`;
+      }
       case 'raise': return `Subir para ${a.value}`;
       case 'double': return `Duplicar o monte de ${a.value}`;
       case 'trail': return 'Largar';
@@ -767,13 +796,20 @@
     }
     const deadline = session.kind === 'online' && session.lobby && session.lobby.deadline;
     const clock = deadline ? ` <span class="relogio" data-deadline="${deadline}"></span>` : '';
-    if (!ui.card) { box.innerHTML = `<p>É a tua vez. Escolhe uma carta da mão.${clock}</p>`; tickClock(); return; }
+    if (!ui.card) {
+      const blocked = v.hand.length && !E.validateMove(ctx, { type: 'trail', card: v.hand[0] }).ok;
+      box.innerHTML = `<p>É a tua vez. ${blocked ? 'Tens um monte teu na mesa, por isso não podes largar.' : 'Escolhe uma carta da mão.'}${clock}</p>`;
+      tickClock(); return;
+    }
     const sel = [...ui.sel];
     const acts = E.actionsFor(ctx, ui.card, sel);
     const parts = [];
     if (!sel.length) {
       const best = E.bestCapture(v.table, ui.card, it => (it.k === 'b' ? it.cards.length : 1));
-      if (best.length) {
+      // Com duas figuras iguais na mesa, cada jogador escolhe qual leva.
+      const choose = E.VALUE[ui.card] === null && v.table.filter(t => t.k === 'c' && E.RANK[t.id] === E.RANK[ui.card]).length === 2;
+      if (choose) parts.push(`<p>Toca na figura que queres levar.</p>`);
+      else if (best.length) {
         ui.actions.push({ type: 'capture', card: ui.card, take: best });
         const n = v.table.filter(t => best.includes(t.id)).reduce((x, t) => x + (t.k === 'b' ? t.cards.length : 1), 0);
         parts.push(`<button class="btn prim" data-act="do-action" data-i="${ui.actions.length - 1}">Levar tudo (${n})</button>`);
@@ -787,7 +823,7 @@
     });
     let msg = '';
     if (sel.length && !acts.length) msg = `<p class="aviso">${esc(E.explainSelection(ctx, ui.card, sel))}</p>`;
-    else if (!sel.length && !parts.length) msg = '<p>Toca nas cartas da mesa para montar.</p>';
+    else if (!sel.length && !parts.length) msg = E.VALUE[ui.card] === null ? '<p>Tens um monte teu na mesa, por isso não podes largar. Escolhe outra carta.</p>' : '<p>Tens um monte teu na mesa, por isso não podes largar. Escolhe outra carta, ou toca nas cartas da mesa para empilhar.</p>';
     box.innerHTML = parts.join('') + msg + clock;
     tickClock();
   }
@@ -817,6 +853,44 @@
       <tr class="acumulado"><td>Total</td>${v.totals.map(t => `<td>${t}</td>`).join('')}</tr></tbody></table></div>`;
   }
 
+  function podiumHtml(v) {
+    const n = E.numSides(v.config), w = v.match.winners[0];
+    const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => (b === w) - (a === w) || v.totals[b] - v.totals[a]);
+    let place = 0, prev = null;
+    const ranked = order.map((side, i) => {
+      if (v.totals[side] !== prev || i === 1) place = i + 1;
+      prev = v.totals[side];
+      return { side, place, total: v.totals[side] };
+    });
+    const step = (r, idx) => `<div class="degrau-col pos-${idx}" ${r.side === E.sideOf(v.config, v.me) ? 'data-eu="1"' : ''}>
+        <div class="degrau-nome"><b>${esc(sideName(r.side, v))}</b><span>${r.total} ${r.total === 1 ? 'ponto' : 'pontos'}</span></div>
+        <div class="degrau"><span>${r.place}</span></div></div>`;
+    const top = ranked.slice(0, 3);
+    const visual = top.length === 3 ? [[top[1], 2], [top[0], 1], [top[2], 3]] : top.length === 2 ? [[top[1], 2], [top[0], 1]] : [[top[0], 1]];
+    const rest = ranked.slice(3).map(r => `<li>${r.place}.º ${esc(sideName(r.side, v))}: ${r.total}</li>`).join('');
+    const play = ui.podiumKey !== v.roundNo && !reducedMotion();
+    ui.podiumKey = v.roundNo;
+    return { html: `<div class="podio ${play ? 'anima' : ''}">${visual.map(([r, i]) => step(r, i)).join('')}</div>${rest ? `<ol class="podio-resto">${rest}</ol>` : ''}`, play };
+  }
+  function confetti() {
+    const box = document.createElement('div');
+    box.className = 'confetes';
+    box.setAttribute('aria-hidden', 'true');
+    const cols = ['#f4bc23', '#cf3b22', '#fbfaf4', '#1b6a93'];
+    for (let i = 0; i < 70; i++) {
+      const c = document.createElement('i');
+      c.style.left = Math.random() * 100 + '%';
+      c.style.background = cols[i % 4];
+      c.style.animationDelay = 500 + Math.random() * 900 + 'ms';
+      c.style.animationDuration = 1600 + Math.random() * 1400 + 'ms';
+      c.style.setProperty('--x', (Math.random() * 120 - 60) + 'px');
+      c.style.setProperty('--r', Math.random() * 720 + 'deg');
+      box.appendChild(c);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 4400);
+  }
+
   const HOW = { cards: 'pelas cartas', spades: 'pelas espadas', grande: 'pelo Cassino Grande', pequeno: 'pelo Cassino Pequeno', aces: 'pelos ases', sweeps: 'pelas clarezas' };
   function paintOverlay(v) {
     const box = document.getElementById('sobre');
@@ -837,7 +911,8 @@
       if (end) {
         const w = v.match.winners[0];
         const mine = w === E.sideOf(v.config, v.me);
-        title = mine ? (v.config.teams ? 'A tua dupla ganhou!' : 'Ganhaste!') : `${sideName(w, v)} ${v.config.teams ? 'ganharam' : 'ganhou'}`;
+        const t = E.numTeams(v.config);
+        title = mine ? (t ? 'A tua equipa ganhou!' : 'Ganhaste!') : `${sideName(w, v)} ${t === 2 ? 'ganharam' : 'ganhou'}`;
         cls = mine ? 'ganhou' : 'perdeu';
         if (v.match.how && v.match.how !== 'score') note = `<p class="nota">Empate no total, decidido ${HOW[v.match.how]} da última ronda.</p>`;
       } else if (v.match.extra) note = '<p>Empate total. Joga-se mais uma ronda e os pontos somam ao total.</p>';
@@ -851,7 +926,13 @@
       } else {
         actions = isHost ? '<button class="btn prim" data-act="next-round">Próxima ronda</button>' : '<p class="nota">A próxima ronda começa quando quem criou a sala avançar.</p>';
       }
-      html = `<div class="sobre"><div class="folha ${cls}"><h2>${esc(title)}</h2>${note}${scoreTable(v)}${left}<div class="folha-acoes">${actions}</div><button class="link" data-act="toggle-log">Ver o histórico da ronda</button></div></div>`;
+      let podium = '';
+      if (end) {
+        const pd = podiumHtml(v);
+        podium = pd.html;
+        if (pd.play && v.match.winners[0] === E.sideOf(v.config, v.me)) confetti();
+      }
+      html = `<div class="sobre"><div class="folha ${cls}"><h2>${esc(title)}</h2>${podium}${note}${scoreTable(v)}${left}<div class="folha-acoes">${actions}</div><button class="link" data-act="toggle-log">Ver o histórico da ronda</button></div></div>`;
     }
     box.innerHTML = html;
     if (ui.chatOpen) { const l = box.querySelector('.chat-lista'); if (l) l.scrollTop = l.scrollHeight; }
@@ -1010,6 +1091,7 @@
       }
       case 'create-room': await doCreate(); break;
       case 'seat': session.action('seat', { seat: +t.dataset.seat }); break;
+      case 'change-team': session.action('changeTeam', Object.assign({ team: +t.dataset.team }, t.dataset.seat === undefined ? {} : { seat: +t.dataset.seat })); break;
       case 'add-bot': session.action('addBot', { seat: +t.dataset.seat, level: t.dataset.level }); break;
       case 'remove-seat': session.action('removeSeat', { seat: +t.dataset.seat }); break;
       case 'start-online': session.action('start'); break;

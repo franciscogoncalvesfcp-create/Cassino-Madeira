@@ -16,7 +16,7 @@ window.CassinoRules = function (c, monte) {
 
 <section id="r-objetivo">
 <h3>Objetivo</h3>
-<p>O Cassino joga-se com 52 cartas, sem jokers. Capturas cartas da mesa para ganhar pontos. Podes jogar a dois, a três, a quatro individualmente, ou a quatro em duplas (jogadores 1 e 3 contra 2 e 4).</p>
+<p>O Cassino joga-se com 52 cartas, sem jokers. Capturas cartas da mesa para ganhar pontos. Podes jogar a 2, 3, 4 ou 6, todos contra todos. Em equipas, joga-se a 4 em duplas, ou a 6 em duplas ou em trios.</p>
 <p>A partida pode durar uma só ronda, ou ir até 21 ou 32 pontos.</p>
 <ul>
   <li>O Ás vale 1 e as cartas de 2 a 10 valem o seu número.</li>
@@ -27,21 +27,25 @@ window.CassinoRules = function (c, monte) {
 
 <section id="r-jogada">
 <h3>A jogada</h3>
-<p>Na tua vez, jogas exatamente uma carta. Com ela podes capturar, montar ou largar.</p>
+<p>Na tua vez, jogas exatamente uma carta. Com ela podes capturar, empilhar ou largar.</p>
 <h4>Capturar</h4>
 <p>A carta jogada leva as cartas do mesmo valor, os grupos de cartas soltas que somem esse valor, e os montes desse valor. Cada carta só serve num grupo. Podes levar só uma parte, e capturar nunca é obrigatório.</p>
 ${ex(c('8S') + seta + c('8D') + c('6C') + c('2H') + c('5S') + c('3D'), 'O 8 leva tudo: o 8, o grupo 6 + 2 e o grupo 5 + 3.')}
 <p>Um monte não trancado conta como uma carta do seu valor nas somas.</p>
 ${ex(c('9S') + seta + monte(6, false, ['4H', '2D']) + c('3C'), 'O 9 levanta o monte de 6 e o 3 solto.')}
-<p>As figuras só apanham figuras iguais, uma, duas ou três de cada vez. Não apanham montes.</p>
+<p>As figuras só apanham figuras iguais: uma de cada vez, ou as três se estiverem todas na mesa. Nunca duas, para não ficar uma figura sozinha até ao fim. Não apanham montes.</p>
 <h4>Largar</h4>
-<p>Podes pousar sempre uma carta solta na mesa, mesmo que pudesses capturar. Ter um monte na mesa não te impede de largar.</p>
+<p>Podes pousar uma carta solta na mesa, mesmo que pudesses capturar. A exceção é teres um monte teu na mesa: aí não podes largar enquanto houver outra jogada.</p>
+<ul>
+  <li>Podes levantar o monte, capturar outras cartas ou preparar outro monte.</li>
+  <li>Se a única alternativa a largar for levantar o monte, és obrigado a levantá-lo.</li>
+</ul>
 </section>
 
 <section id="r-montes">
 <h3>Montes</h3>
 <p>Para fazer ou alterar um monte, tens de ficar na mão, depois de jogar, com outra carta do valor final. Um monte usa sempre uma carta da tua mão, e nunca passa de 10.</p>
-<p>Os montes são da mesa. Até ser levantado, qualquer jogador o pode levar, subir ou duplicar, por isso quem monta arrisca-se a ficar sem ele.</p>
+<p>Até ser levantado, qualquer jogador pode levar, subir ou duplicar um monte, por isso quem empilha arrisca-se a ficar sem ele. Um monte é teu se foste o último a fazê-lo, subi-lo ou duplicá-lo.</p>
 <h4>Monte simples</h4>
 <p>Jogas uma carta sobre uma ou mais cartas soltas.</p>
 ${ex(c('4S') + seta + c('3H') + igual + monte(7, false, ['3H', '4S']), 'Tens de ter um 7 na mão. O monte fica a valer 7.')}
@@ -51,6 +55,9 @@ ${ex(monte(7, false, ['3H', '4S']) + seta + c('AC') + igual + monte(8, false, ['
 <h4>Monte duplo</h4>
 <p>Juntas a um monte outro grupo do mesmo valor, feito com a tua carta mais zero ou mais cartas soltas. O monte fica trancado, e precisas de ter outra carta desse valor na mão.</p>
 ${ex(monte(7, false, ['3H', '4S']) + seta + c('5D') + c('2C') + igual + monte(7, true, ['3H', '4S', '2C', '5D']), 'O 5 da mão e o 2 solto valem 7. Também podias jogar um 7 diretamente sobre o monte, se tivesses outro.')}
+<h4>Monte trancado de uma só vez</h4>
+<p>Na mesma jogada, podes juntar a tua carta a vários grupos soltos do mesmo valor. Precisas de ficar com outra carta desse valor na mão.</p>
+${ex(c('5S') + seta + c('3H') + c('2D') + c('5C') + igual + monte(5, true, ['3H', '2D', '5C', '5S']), 'Tens dois 5 na mão: jogas um e levantas o monte com o outro na próxima vez. Também podes juntar assim vários grupos a um monte que já esteja na mesa.')}
 <h4>Chamar</h4>
 <p>Jogas uma carta sobre cartas soltas do mesmo valor, e tens de ficar com outra igual na mão. Cria um monte trancado.</p>
 ${ex(c('6S') + seta + c('6H') + igual + monte(6, true, ['6H', '6S']), 'Tens de ter outro 6 na mão.')}
@@ -62,7 +69,7 @@ ${ex(c('6S') + seta + c('6H') + igual + monte(6, true, ['6H', '6S']), 'Tens de t
 <h3>Fim da ronda</h3>
 <ul>
   <li>A ronda fecha com a última carta da última distribuição.</li>
-  <li><b>Sobras:</b> tudo o que ficar na mesa, incluindo montes, vai para o último jogador ou dupla que capturou.</li>
+  <li><b>Sobras:</b> tudo o que ficar na mesa, incluindo montes, vai para o último jogador ou equipa que capturou.</li>
   <li><b>Clareza:</b> uma captura que deixa a mesa totalmente vazia vale 1 ponto. A última jogada da ronda nunca conta como clareza.</li>
 </ul>
 </section>
@@ -92,9 +99,10 @@ ${ex(c('10D') + c('2S') + c('AH'), 'As cartas que dão pontos diretamente têm u
 <section id="r-interface">
 <h3>Como jogar aqui</h3>
 <ul>
+  <li>Em equipas online, muda de equipa no lobby, antes de começar.</li>
   <li>Toca numa carta da tua mão. As cartas da mesa que podes levar ficam com um contorno tracejado.</li>
   <li>Usa <b>Levar tudo</b> para levar o máximo de uma vez, ou toca nas cartas da mesa que queres usar.</li>
-  <li>Os botões mudam conforme a seleção: levar, montar, chamar, subir ou duplicar. Se nada servir, é dito porquê.</li>
+  <li>Os botões mudam conforme a seleção: levar, empilhar, chamar, subir ou duplicar. Se nada servir, é dito porquê.</li>
   <li>Sem cartas da mesa selecionadas, o botão é <b>Largar</b>.</li>
   <li>Um monte tem um selo com o seu valor. O cadeado indica que está trancado.</li>
   <li>O botão <b>Histórico</b> mostra todas as jogadas da ronda.</li>

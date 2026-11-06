@@ -14,11 +14,12 @@ const MAX_ROOMS = +process.env.MAX_ROOMS || 300;
 const BOT_DELAY = +process.env.BOT_DELAY_MS || 1200;
 const OFFLINE_GRACE = +process.env.OFFLINE_GRACE_MS || 30000; // quanto se espera por quem perdeu a ligação
 const DEAL_PAUSE = process.env.DEAL_PAUSE_MS !== undefined ? +process.env.DEAL_PAUSE_MS : null; // tempo para a animação de distribuição
+const CREATE_PER_MIN = +process.env.CREATE_PER_MIN || 10;
 const HOST_GRACE = +process.env.HOST_GRACE_MS || 20000;
 const NEXT_ROUND_WAIT = +process.env.NEXT_ROUND_MS || 45000;
 const EMPTY_ROOM_TTL = +process.env.EMPTY_ROOM_MS || 10 * 60000;
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const BOT_NICKS = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil'];
+const BOT_NICKS = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil', 'Lurdes', 'Nélio'];
 
 const rng = () => crypto.randomInt(0, 2 ** 32) / 2 ** 32;
 const rooms = new Map();
@@ -172,7 +173,7 @@ function autoPlay(room, seat, level) {
   const s = room.state;
   const m = B.choose(level, E.botView(s, seat), rng);
   let r = E.applyMove(s, seat, m);
-  if (!r.ok) r = E.applyMove(s, seat, { type: 'trail', card: s.hands[seat][0] });
+  if (!r.ok) r = E.applyMove(s, seat, E.enumerateMoves({ hand: s.hands[seat], table: s.table, player: seat })[0]);
   return r;
 }
 function schedule(room) {
@@ -241,8 +242,33 @@ function doAction(room, p, b) {
       requireLobby(room);
       const to = +b.seat;
       if (!Number.isInteger(to) || to < 0 || to >= room.seats.length) throw new HttpError(400, 'Esse lugar não existe.');
-      if (room.seats[to]) throw new HttpError(409, 'Esse lugar já está ocupado.');
-      room.seats[seat] = null; room.seats[to] = p;
+      const there = room.seats[to];
+      if (there && !there.isBot) throw new HttpError(409, 'Esse lugar já está ocupado.');
+      room.seats[seat] = there || null; room.seats[to] = p;
+      break;
+    }
+    case 'changeTeam': {
+      requireLobby(room);
+      const t = E.numTeams(room.config);
+      if (!t) throw new HttpError(400, 'Esta sala não joga em equipas.');
+      const from = b.seat === undefined ? seat : +b.seat;
+      const who = room.seats[from];
+      if (!who) throw new HttpError(409, 'Esse lugar está vazio.');
+      if (from !== seat) requireHost(room, p);
+      const team = +b.team;
+      if (!Number.isInteger(team) || team < 0 || team >= t) throw new HttpError(400, 'Essa equipa não existe.');
+      if (from % t === team) break;
+      const targets = room.seats.map((_, i) => i).filter(i => i % t === team);
+      let to = targets.find(i => !room.seats[i]);
+      if (to === undefined) to = targets.find(i => room.seats[i].isBot);
+      if (to === undefined) {
+        // Equipa só com pessoas: só quem criou a sala pode trocar alguém de lugar.
+        ensureHost(room);
+        if (p.id !== room.hostId) throw new HttpError(409, 'Essa equipa está cheia. Pede a quem criou a sala para fazer a troca.');
+        to = targets[0];
+      }
+      room.seats[from] = room.seats[to] || null;
+      room.seats[to] = who;
       break;
     }
     case 'addBot': {
@@ -307,7 +333,7 @@ function doAction(room, p, b) {
 function sanitizeMove(m) {
   if (!m || typeof m !== 'object') return null;
   const take = Array.isArray(m.take) ? m.take.slice(0, 60).map(String) : [];
-  return { type: String(m.type), card: String(m.card), take, build: m.build == null ? undefined : String(m.build) };
+  return { type: String(m.type), card: String(m.card), take, build: m.build == null ? undefined : String(m.build), value: m.value == null ? undefined : +m.value };
 }
 
 // --- HTTP ------------------------------------------------------------------------
@@ -389,7 +415,7 @@ async function route(req, res) {
     return json(res, 200, { rooms: list });
   }
   if (pathname === '/api/rooms' && req.method === 'POST') {
-    if (!allow('create:' + ip, 10, 10)) throw new HttpError(429, 'Criaste muitas salas seguidas. Espera um minuto.');
+    if (!allow('create:' + ip, CREATE_PER_MIN, CREATE_PER_MIN)) throw new HttpError(429, 'Criaste muitas salas seguidas. Espera um minuto.');
     const { room, player } = createRoom(await readBody(req));
     return json(res, 200, { code: room.code, token: player.token });
   }
