@@ -99,7 +99,7 @@ ${ex(c('10D') + c('2S') + c('AH'), 'As cartas que dão pontos diretamente têm u
 <section id="r-interface">
 <h3>Como jogar aqui</h3>
 <ul>
-  <li>Em equipas online, muda de equipa no lobby, antes de começar.</li>
+  <li>No lobby online, cada um pode mudar de equipa, e quem criou a sala pode baralhar as equipas, mudar o modo de jogo e desligar as ajudas, o histórico ou os avisos para todos.</li>
   <li>Toca numa carta da tua mão. As cartas da mesa que podes levar ficam com um contorno tracejado.</li>
   <li>Usa <b>Levar tudo</b> para levar o máximo de uma vez, ou toca nas cartas da mesa que queres usar.</li>
   <li>Os botões mudam conforme a seleção: levar, empilhar, chamar, subir ou duplicar. Se nada servir, é dito porquê.</li>

@@ -60,7 +60,10 @@
     if (prefs.colors4) return { S: '#1b1f24', H: '#c42417', D: '#1658b8', C: '#137a3d' }[s];
     return s === 'H' || s === 'D' ? '#c42417' : '#1b1f24';
   }
-  function scoring(id) { return prefs.hints && (id === '10D' || id === '2S' || E.RANK[id] === 'A'); }
+  // O anfitrião pode desligar ajudas, histórico e avisos para toda a sala.
+  function roomOpt(k) { return !(session && session.kind === 'online' && session.lobby && session.lobby.options && session.lobby.options[k] === false); }
+  const hintsOn = () => prefs.hints && roomOpt('hints');
+  function scoring(id) { return hintsOn() && (id === '10D' || id === '2S' || E.RANK[id] === 'A'); }
   function cardSvg(id) {
     const r = E.RANK[id], s = E.SUIT[id], col = suitColor(s), v = E.VALUE[id];
     const use = (x, y, size, flip) => `<use href="#s-${s}" x="${x - size / 2}" y="${y - size / 2}" width="${size}" height="${size}"${flip ? ` transform="rotate(180 ${x} ${y})"` : ''}/>`;
@@ -214,7 +217,6 @@
   }
 
   // --- Sessão local ----------------------------------------------------------
-  const BOT_NAMES = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil', 'Lurdes'];
   function LocalSession(state, level, names) {
     this.kind = 'local'; this.state = state; this.level = level; this.names = names; this.timer = null;
     this.seats = names.map((n, i) => ({ nick: n, isBot: i !== 0, connected: true }));
@@ -254,7 +256,8 @@
   function startOffline() {
     const cfg = modeToCfg(offlineCfg.mode, offlineCfg.target);
     save('offline', offlineCfg);
-    const names = [chosenName() || 'Tu'].concat(BOT_NAMES.slice(0, cfg.numPlayers - 1));
+    const me = chosenName() || 'Tu';
+    const names = [me].concat(B.pickNames(cfg.numPlayers - 1, Math.random, [me]));
     session = new LocalSession(E.createMatch(cfg, Math.random), offlineCfg.level, names);
     ui.reset(); go('game'); session.tick();
   }
@@ -463,12 +466,38 @@
         <div class="bloco"><span class="rotulo">Código da sala</span><div class="codigo">${esc(L.code)}</div>
           <p class="nota">${L.visibility === 'private' ? 'Sala privada. Envia o link e a password aos teus amigos.' : 'Sala pública. Também aparece na lista de salas.'} ${esc(modeName(L.config))}, ${esc(tgtTxt)}${L.turnSeconds ? `, ${L.turnSeconds} segundos por jogada` : ', sem limite de tempo'}.</p>
           <div class="acoes-fim"><button class="btn peq" data-act="copy" data-text="${esc(link)}">Copiar link de convite</button></div></div>
-        <div class="bloco"><h3>${teams ? 'Equipas' : 'Lugares'}</h3>${seatsHtml}</div>
+        <div class="bloco"><div class="equipa-topo"><h3>${teams ? 'Equipas' : 'Lugares'}</h3>${isHost && teams ? '<button class="btn peq" data-act="shuffle-teams">Baralhar equipas</button>' : ''}</div>${seatsHtml}</div>
         <div class="acoes-fim">${isHost ? `<button class="btn prim" data-act="start-online" ${filled ? '' : 'disabled'}>Começar partida</button>${filled ? '' : '<p class="nota">Espera por amigos ou preenche os lugares vazios com bots.</p>'}` : '<p>Quem criou a sala começa a partida.</p>'}</div>
+        ${roomSettings(L, isHost)}
         <div class="bloco chat"><h3>Conversa</h3>${chatHtml(L)}</div>
       </div></div>`;
     const list = app.querySelector('.chat-lista'); if (list) list.scrollTop = list.scrollHeight;
     if (active !== null) { const c = document.getElementById('chat-txt'); c.value = active; c.focus(); }
+  }
+  function modeOf(c) {
+    const t = E.numTeams(c);
+    if (!t) return String(c.numPlayers);
+    if (c.numPlayers === 4) return '4t';
+    return t === 3 ? '6d' : '6t';
+  }
+  function roomSettings(L, isHost) {
+    const o = L.options || {};
+    const opts = [
+      ['hints', 'Ajudas na mesa', 'Mostra o que se pode levar, marca as cartas com pontos e o botão Levar tudo'],
+      ['log', 'Histórico da ronda', 'Lista de todas as jogadas'],
+      ['alerts', 'Avisos do baralho', 'Avisa quando faltam poucas cartas e quando saem as últimas'],
+    ];
+    if (!isHost) {
+      const off = opts.filter(([k]) => o[k] === false).map(([, t]) => t.toLowerCase());
+      return `<div class="bloco"><h3>Regras da sala</h3><p class="nota">${off.length ? 'Quem criou a sala desligou: ' + esc(off.join(', ')) + '.' : 'Ajudas, histórico e avisos estão ligados.'}</p></div>`;
+    }
+    const onOff = (k) => [{ v: true, t: 'Ligado' }, { v: false, t: 'Desligado' }];
+    return `<div class="bloco"><h3>Definições da sala</h3><p class="nota">Só tu podes mudar isto, e só antes de começar.</p>
+      <div class="campo"><span class="rotulo">Modo de jogo</span>${options('l-mode', MODES, modeOf(L.config))}</div>
+      <div class="campo"><span class="rotulo">Duração</span>${options('l-target', TARGETS, L.config.target)}</div>
+      <div class="campo"><span class="rotulo">Tempo por jogada</span>${options('l-turn', [{ v: '30', t: '30 segundos' }, { v: '60', t: '60 segundos' }, { v: '0', t: 'Sem limite' }], String(L.turnSeconds))}</div>
+      ${opts.map(([k, t, d]) => `<div class="campo"><span class="rotulo">${t}</span><p class="nota">${d}.</p>${options('l-' + k, onOff(k), o[k] !== false)}</div>`).join('')}
+    </div>`;
   }
   function chatHtml(L) {
     return `<div class="chat-lista" aria-live="polite">${L.chat.length ? L.chat.map(m => `<p><b>${esc(m.nick)}:</b> ${esc(m.text)}</p>`).join('') : '<p class="nota">Ainda ninguém escreveu.</p>'}</div>
@@ -555,7 +584,7 @@
       <div class="barra">
         <span class="info">Ronda ${v.roundNo}. ${esc(metaTxt)}</span>
         <div class="placar">${placar(v)}</div>
-        <div class="barra-acoes"><button class="icon" data-act="toggle-log" aria-controls="historico">Histórico</button>${session.kind === 'online' ? `<button class="icon" data-act="toggle-chat">Conversa</button>` : ''}<button class="icon" data-act="toggle-menu">Menu</button></div>
+        <div class="barra-acoes">${roomOpt('log') ? '<button class="icon" data-act="toggle-log" aria-controls="historico">Histórico</button>' : ''}${session.kind === 'online' ? `<button class="icon" data-act="toggle-chat">Conversa</button>` : ''}<button class="icon" data-act="toggle-menu">Menu</button></div>
       </div>
       <div class="faixa"></div>
       <div class="jogo-corpo">
@@ -595,7 +624,7 @@
   function paintLog(v) {
     const aside = document.getElementById('historico'), lista = document.getElementById('historico-lista');
     if (!aside) return;
-    const open = isWide() ? prefs.logOpen : ui.logDrawer;
+    const open = roomOpt('log') && (isWide() ? prefs.logOpen : ui.logDrawer);
     aside.classList.toggle('aberto', open);
     document.getElementById('historico-fundo').classList.toggle('aberto', open && !isWide());
     const items = (v.history || []).map(h => {
@@ -691,6 +720,7 @@
     setTimeout(() => { g.remove(); arrive(); }, d.dur);
   }
   function announceLast(v) {
+    if (!roomOpt('alerts')) return;
     sfx.last();
     const a = document.createElement('div');
     a.className = 'anuncio';
@@ -712,7 +742,7 @@
     if (!canAct) { ui.card = null; ui.sel.clear(); }
 
     // Mesa
-    const hints = ui.card && prefs.hints ? E.captureHints(v.table, ui.card) : new Set();
+    const hints = ui.card && hintsOn() ? E.captureHints(v.table, ui.card) : new Set();
     const lastIds = new Set();
     if (v.lastMove) {
       if (v.lastMove.build) lastIds.add(v.lastMove.build);
@@ -754,7 +784,7 @@
     const perDeal = v.config.numPlayers * 4;
     const al = document.getElementById('alerta');
     al.className = 'alerta-baralho';
-    if (v.phase !== 'play' || ui.deal) { al.textContent = ''; return; }
+    if (v.phase !== 'play' || ui.deal || !roomOpt('alerts')) { al.textContent = ''; return; }
     if (v.deckCount === 0) {
       al.classList.add('fim');
       const who = v.lastCapturer === null || v.lastCapturer === undefined ? null : v.lastCapturer === v.me ? 'ti' : nameOf(v.lastCapturer, v);
@@ -809,7 +839,7 @@
       // Com duas figuras iguais na mesa, cada jogador escolhe qual leva.
       const choose = E.VALUE[ui.card] === null && v.table.filter(t => t.k === 'c' && E.RANK[t.id] === E.RANK[ui.card]).length === 2;
       if (choose) parts.push(`<p>Toca na figura que queres levar.</p>`);
-      else if (best.length) {
+      else if (best.length && hintsOn()) {
         ui.actions.push({ type: 'capture', card: ui.card, take: best });
         const n = v.table.filter(t => best.includes(t.id)).reduce((x, t) => x + (t.k === 'b' ? t.cards.length : 1), 0);
         parts.push(`<button class="btn prim" data-act="do-action" data-i="${ui.actions.length - 1}">Levar tudo (${n})</button>`);
@@ -932,7 +962,7 @@
         podium = pd.html;
         if (pd.play && v.match.winners[0] === E.sideOf(v.config, v.me)) confetti();
       }
-      html = `<div class="sobre"><div class="folha ${cls}"><h2>${esc(title)}</h2>${podium}${note}${scoreTable(v)}${left}<div class="folha-acoes">${actions}</div><button class="link" data-act="toggle-log">Ver o histórico da ronda</button></div></div>`;
+      html = `<div class="sobre"><div class="folha ${cls}"><h2>${esc(title)}</h2>${podium}${note}${scoreTable(v)}${left}<div class="folha-acoes">${actions}</div>${roomOpt('log') ? '<button class="link" data-act="toggle-log">Ver o histórico da ronda</button>' : ''}</div></div>`;
     }
     box.innerHTML = html;
     if (ui.chatOpen) { const l = box.querySelector('.chat-lista'); if (l) l.scrollTop = l.scrollHeight; }
@@ -1091,6 +1121,7 @@
       }
       case 'create-room': await doCreate(); break;
       case 'seat': session.action('seat', { seat: +t.dataset.seat }); break;
+      case 'shuffle-teams': session.action('shuffleTeams'); break;
       case 'change-team': session.action('changeTeam', Object.assign({ team: +t.dataset.team }, t.dataset.seat === undefined ? {} : { seat: +t.dataset.seat })); break;
       case 'add-bot': session.action('addBot', { seat: +t.dataset.seat, level: t.dataset.level }); break;
       case 'remove-seat': session.action('removeSeat', { seat: +t.dataset.seat }); break;
@@ -1113,6 +1144,15 @@
       prefs[f.slice(2)] = val;
       if (f === 'p-colors4') for (const k in cardCache) delete cardCache[k];
       applyPrefs(); renderSettings(); return;
+    }
+    if (f.startsWith('l-')) {
+      const k = f.slice(2), L = session && session.lobby;
+      if (!L) return;
+      if (k === 'mode') session.action('setConfig', { config: modeToCfg(String(val), L.config.target) });
+      else if (k === 'target') session.action('setConfig', { config: { target: String(val) } });
+      else if (k === 'turn') session.action('setConfig', { turnSeconds: +val });
+      else session.action('setConfig', { options: { [k]: val } });
+      return;
     }
     if (f.startsWith('c-')) {
       keepCreateInputs();

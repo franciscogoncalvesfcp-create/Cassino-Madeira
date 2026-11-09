@@ -181,5 +181,13 @@
     if (level === 'hard') return hard(view, rng, opts);
     return medium(view, rng);
   }
-  return { choose, easy, medium, hard };
+  // Nomes dos bots: cada partida sorteia os seus.
+  const NAMES = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil', 'Lurdes', 'Nélio', 'Gorete', 'Firmino', 'Rosário', 'Bernardete',
+    'Duarte', 'Ilídio', 'Odete', 'Jacinto', 'Fátima', 'Tó Zé', 'Albertina', 'Gualberto', 'Natércia', 'Silvino',
+    'Manuela', 'Abel', 'Graça', 'Teodoro', 'Celeste', 'Martinho', 'Dulce', 'Ezequiel', 'Aurora', 'Leonel'];
+  function pickNames(n, rng, taken) {
+    const used = new Set(taken || []);
+    return E.shuffle(NAMES.filter(x => !used.has(x)), rng || Math.random).slice(0, n);
+  }
+  return { choose, easy, medium, hard, NAMES, pickNames };
 });

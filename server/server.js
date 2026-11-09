@@ -19,7 +19,6 @@ const HOST_GRACE = +process.env.HOST_GRACE_MS || 20000;
 const NEXT_ROUND_WAIT = +process.env.NEXT_ROUND_MS || 45000;
 const EMPTY_ROOM_TTL = +process.env.EMPTY_ROOM_MS || 10 * 60000;
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const BOT_NICKS = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil', 'Lurdes', 'Nélio'];
 
 const rng = () => crypto.randomInt(0, 2 ** 32) / 2 ** 32;
 const rooms = new Map();
@@ -71,10 +70,40 @@ function makePlayer(nick) {
 }
 function makeBot(level, room) {
   const used = new Set(room.seats.filter(Boolean).map(p => p.nick));
-  const nick = BOT_NICKS.find(n => !used.has(n)) || 'Bot';
+  const nick = B.pickNames(1, rng, used)[0] || 'Bot';
   return { id: crypto.randomUUID(), token: null, nick, isBot: true, level, connected: true };
 }
 function validConfig(c) { return E.normalizeConfig(c || {}); }
+// Opções que o anfitrião controla. Tudo ligado por omissão.
+const OPTION_KEYS = ['hints', 'log', 'alerts'];
+function validOptions(o, base) {
+  const out = Object.assign({ hints: true, log: true, alerts: true }, base);
+  if (o && typeof o === 'object') for (const k of OPTION_KEYS) if (typeof o[k] === 'boolean') out[k] = o[k];
+  return out;
+}
+// Muda o número de lugares mantendo quem já está sentado. Os bots saem primeiro se faltar espaço.
+function resizeSeats(room, n) {
+  const old = room.seats;
+  if (old.length === n) return;
+  const people = old.filter(x => x && !x.isBot).length;
+  if (people > n) throw new HttpError(409, `Há ${people} pessoas na sala. Para passar para ${n} jogadores, alguém tem de sair primeiro.`);
+  const seats = new Array(n).fill(null);
+  const overflow = [];
+  old.forEach((x, i) => { if (!x) return; if (i < n) seats[i] = x; else overflow.push(x); });
+  overflow.sort((a, b) => a.isBot - b.isBot);
+  for (const x of overflow) {
+    let free = seats.indexOf(null);
+    if (free < 0 && !x.isBot) free = seats.findIndex(y => y.isBot); // a pessoa fica com o lugar de um bot
+    if (free >= 0) seats[free] = x;
+  }
+  room.seats = seats;
+}
+// Assinatura de quem joga com quem (os números das equipas não contam).
+function teamSig(room, t) {
+  const groups = Array.from({ length: t }, () => []);
+  room.seats.forEach((x, i) => { if (x) groups[i % t].push(x.id); });
+  return groups.map(g => g.sort().join(',')).sort().join('|');
+}
 function createRoom(body) {
   if (rooms.size >= MAX_ROOMS) throw new HttpError(503, 'O servidor está cheio. Tenta daqui a pouco.');
   const nick = clean(body.nick, 20);
@@ -87,7 +116,7 @@ function createRoom(body) {
   const room = {
     code: newCode(), name: clean(body.name, 30) || `Mesa de ${nick}`, visibility,
     pass: visibility === 'private' ? hashPassword(password) : null,
-    config, turnSeconds, seats: new Array(config.numPlayers).fill(null),
+    config, turnSeconds, options: validOptions(body.options), seats: new Array(config.numPlayers).fill(null),
     tokens: new Map(), hostId: null, phase: 'lobby', state: null, chat: [], deadline: null, timer: null, nextTimer: null,
     created: Date.now(), emptySince: Date.now(),
   };
@@ -149,23 +178,25 @@ function send(res, obj) { res.write(`data: ${JSON.stringify(obj)}\n\n`); }
 function lobbyFor(room, p) {
   ensureHost(room);
   return {
-    code: room.code, name: room.name, visibility: room.visibility, config: room.config, turnSeconds: room.turnSeconds, phase: room.phase,
+    code: room.code, name: room.name, visibility: room.visibility, config: room.config, turnSeconds: room.turnSeconds, options: room.options, phase: room.phase,
     deadline: room.deadline, now: Date.now(),
     seats: room.seats.map(x => x && { nick: x.nick, isBot: x.isBot, level: x.level, connected: x.isBot ? true : x.connected, isHost: x.id === room.hostId }),
     you: { seat: seatOf(room, p), isHost: p.id === room.hostId },
     chat: room.chat,
   };
 }
+function viewFor(room, seat) {
+  if (!room.state || seat < 0) return null;
+  const v = E.publicView(room.state, seat);
+  // Sem histórico, só segue o último acontecimento, que já está à vista na mesa.
+  if (!room.options.log) v.history = v.history.slice(-1);
+  return v;
+}
 function broadcast(room) {
   for (const p of room.tokens.values()) {
     if (!p.stream) continue;
-    const seat = seatOf(room, p);
-    send(p.stream, { lobby: lobbyFor(room, p), view: room.state && seat >= 0 ? E.publicView(room.state, seat) : null });
+    send(p.stream, { lobby: lobbyFor(room, p), view: viewFor(room, seatOf(room, p)) });
   }
-}
-function pushOne(room, p) {
-  const seat = seatOf(room, p);
-  send(p.stream, { lobby: lobbyFor(room, p), view: room.state && seat >= 0 ? E.publicView(room.state, seat) : null });
 }
 
 // --- Ciclo de jogo -----------------------------------------------------------
@@ -287,6 +318,28 @@ function doAction(room, p, b) {
       room.tokens.delete(x.token);
       if (x.stream) { send(x.stream, { closed: 'Foste retirado da sala.' }); x.stream.end(); x.stream = null; }
       dropFromSeat(room, to, x);
+      break;
+    }
+    case 'setConfig': {
+      requireHost(room, p); requireLobby(room);
+      const cfg = validConfig(Object.assign({}, room.config, b.config || {}));
+      resizeSeats(room, cfg.numPlayers);
+      room.config = cfg;
+      if (b.turnSeconds !== undefined && [0, 30, 60].includes(+b.turnSeconds)) room.turnSeconds = +b.turnSeconds;
+      room.options = validOptions(b.options, room.options);
+      break;
+    }
+    case 'shuffleTeams': {
+      requireHost(room, p); requireLobby(room);
+      const t = E.numTeams(room.config);
+      const before = t ? teamSig(room, t) : room.seats.map(x => x && x.id).join('|');
+      const occupied = room.seats.filter(Boolean).length;
+      // Repete até as equipas mudarem mesmo (se houver mais do que uma maneira de as formar).
+      for (let k = 0; k < 20; k++) {
+        room.seats = E.shuffle(room.seats.slice(), rng);
+        const now = t ? teamSig(room, t) : room.seats.map(x => x && x.id).join('|');
+        if (now !== before || occupied < 2) break;
+      }
       break;
     }
     case 'start': {
