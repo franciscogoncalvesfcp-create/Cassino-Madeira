@@ -213,7 +213,7 @@ As regras do Gringo chegaram a 10/11/2026 (documento do Francisco). Têm coisas 
 - **Jogada Rápida:**
   - só com as próprias cartas;
   - vale enquanto essa carta estiver no topo, incluindo enquanto alguém usa um poder, até o jogador seguinte jogar, e sempre dentro do limite de tempo;
-  - se ninguém mais conseguir ver o resultado a tempo, ganha quem chega primeiro ao servidor.
+  - se duas pessoas a fizerem ao mesmo tempo, ganha quem chega primeiro ao servidor.
 - **Jogada Rápida falhada:** a carta aparece a todos numa animação e volta virada para baixo para a mão de quem a atirou, que recebe ainda uma carta extra do baralho sem a ver.
 - **Poderes:** os Reis vermelhos também têm o poder do Rei. As cartas de quem disse Gringo não ficam protegidas. Os poderes valem na última volta.
 - **Mexer nas cartas:** os outros veem o movimento.
