@@ -2,7 +2,7 @@
 
 Documento vivo com o que existe e com as decisões da plataforma de jogos. Quem retomar o projeto deve ler isto primeiro.
 
-- **Estado:** Etapa 3 feita no branch `etapa-3` (secção 14), à espera de testes no site de teste e de aprovação. O `main` e o site oficial não mudaram.
+- **Estado:** Etapa 3 aprovada e no site oficial (10/11/2026). A versão anterior está na etiqueta `cassino-v1`. Próxima: Etapa 4 (Gringo).
 - **Última atualização:** 10/11/2026, a partir do commit `4423447` do `main`.
 
 ## 1. Resumo
