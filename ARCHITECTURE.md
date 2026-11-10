@@ -202,4 +202,20 @@ As regras do Gringo chegaram a 10/11/2026 (documento do Francisco). Têm coisas 
 - **Bots que reagem:** além de escolher a jogada na sua vez, os bots têm de decidir se fazem uma Jogada Rápida quando cai uma carta, com um tempo de reação. A memória do bot (do que viu) é o que distingue os níveis.
 - **Pontuação ao contrário:** ganha quem tem menos pontos. O torneio usa a classificação que cada jogo devolve, por isso isto não o afeta.
 
-As dúvidas sobre as regras do Gringo foram enviadas ao Francisco e as respostas entram aqui.
+### Respostas do Francisco sobre o Gringo (10/11/2026)
+
+- **Jogadores:** "todas as que forem possíveis". O limite exato ainda está por fechar.
+- **Quem começa:** na primeira mão é à sorte; nas seguintes começa quem ganhou a anterior.
+- **Empate:** é empate, e os empatados ficam na mesma posição. Para a mão seguinte, começa o empatado que deixa o outro jogar o mais cedo possível (a regra exata ainda está por confirmar).
+- **Gringo falhado:** não há penalização. Quem diz Gringo e não fica com menos pontos empata ou perde.
+- **Compra:** só do baralho. O lixo começa vazio.
+- **Reciclagem:** a última carta posta no lixo fica na mesa, para ainda se poder fazer uma Jogada Rápida sobre ela. As outras voltam ao baralho.
+- **Jogada Rápida:**
+  - só com as próprias cartas;
+  - vale enquanto essa carta estiver no topo, incluindo enquanto alguém usa um poder, até o jogador seguinte jogar, e sempre dentro do limite de tempo;
+  - se ninguém mais conseguir ver o resultado a tempo, ganha quem chega primeiro ao servidor.
+- **Jogada Rápida falhada:** a carta aparece a todos numa animação e volta virada para baixo para a mão de quem a atirou, que recebe ainda uma carta extra do baralho sem a ver.
+- **Poderes:** os Reis vermelhos também têm o poder do Rei. As cartas de quem disse Gringo não ficam protegidas. Os poderes valem na última volta.
+- **Mexer nas cartas:** os outros veem o movimento.
+
+Por fechar: o fim da partida (quantas mãos), o limite de jogadores, se reis de cor diferente contam como iguais na Jogada Rápida, o limite de tempo e o sentido do jogo.
