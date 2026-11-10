@@ -2,7 +2,7 @@
 
 Documento vivo com o que existe e com as decisões da plataforma de jogos. Quem retomar o projeto deve ler isto primeiro.
 
-- **Estado:** Etapa 2 (desenho) proposta na secção 13, à espera de aprovação. Ainda não há código novo.
+- **Estado:** Etapa 3 feita no branch `etapa-3` (secção 14), à espera de testes no site de teste e de aprovação. O `main` e o site oficial não mudaram.
 - **Última atualização:** 10/11/2026, a partir do commit `4423447` do `main`.
 
 ## 1. Resumo
@@ -150,6 +150,7 @@ Pontos fracos conhecidos:
 | 10/11/2026 | Custo zero. |
 | 10/11/2026 | Um branch por etapa. O `main`, que publica o site, só recebe etapas aprovadas. Um segundo serviço no Render serve para testar branches. |
 | 10/11/2026 | Português de Portugal na interface e nas mensagens. |
+| 10/11/2026 | Desenho da Etapa 2 aprovado, incluindo torneio: várias mesas com bots quando há pessoas a mais, bots a completar quando há a menos, pontos por lugar (1.º recebe pessoas na mesa menos 1, último 0, bots sem pontos) e desempate por vitórias, segundos lugares e última ronda. |
 
 ## 10. Guardar a classificação de graça: opções e limites
 
@@ -225,7 +226,7 @@ As regras do Gringo chegaram a 10/11/2026 (documento do Francisco). Têm coisas 
 
 - **Tempo por turno:** quem cria a sala escolhe, como no Cassino.
 
-## 13. Etapa 2: desenho da plataforma (proposta, por aprovar)
+## 13. Etapa 2: desenho da plataforma (aprovado a 10/11/2026)
 
 ### 13.1 As três peças
 
@@ -367,3 +368,64 @@ Para já, todos os jogos carregam juntos, porque são poucos e pequenos. A pasta
 2. **Etapa 4:** Gringo (regras e testes; depois bots e mesa).
 3. **Etapa 5:** torneio, com gravação no Neon.
 4. **Depois:** Sueca e King, um de cada vez.
+
+## 14. Etapa 3: núcleo extraído, Cassino como primeiro módulo
+
+**Onde está cada coisa agora**
+
+```
+core/server/server.js   núcleo: salas, lugares, equipas, tempo real, temporizadores, bots, segurança
+core/server/games.js    lista de jogos disponíveis
+core/shared/names.js    nomes dos bots e regra das equipas (lugar i é da equipa i % equipas)
+core/client/platform.js menu, definições, partida offline, salas online, lobby, conversa, menu e conversa por cima da mesa
+core/client/cards.js    desenho das cartas (baralho francês), para todos os jogos de cartas
+core/client/files.js    ficheiros do cliente, pela ordem; o servidor e a versão offline usam esta lista
+core/client/index.html  esqueleto da página; o servidor junta os ficheiros de files.js
+games/cassino/rules.js  regras (o antigo shared/engine.js, sem mudanças)
+games/cassino/bots.js   bots (o antigo shared/bots.js, sem os nomes)
+games/cassino/module.js o Cassino a cumprir o contrato da secção 13.2
+games/cassino/table.js  mesa do Cassino
+games/cassino/instructions.js  instruções
+```
+
+**Como o núcleo trata qualquer jogo**
+
+- Recebe as jogadas pela ordem de chegada e passa-as ao módulo (`apply`).
+- Depois de cada mudança, sobe a versão da partida e volta a calcular os temporizadores:
+  - bots;
+  - tempo por jogada;
+  - quem caiu;
+  - prazos do próprio jogo (`nextDeadline` e `tick`).
+
+  Os prazos contam desde a última mudança, por isso voltar a ligar já não dá tempo extra.
+- As ações que só o anfitrião pode fazer vêm do módulo (`hostActions`, no Cassino a passagem de ronda).
+- A ação antiga `next` continua a funcionar.
+- A partida offline usa o mesmo contrato que o servidor.
+
+**Como se confirmou que o Cassino não mudou**
+
+- Antes de mexer, gravaram-se 24 partidas completas com sorte fixa (`test/fixtures/cassino-golden.json`): 8 formatos, 2230 jogadas.
+- O módulo repete as jogadas gravadas e chega exatamente ao mesmo fim.
+- Os bots, chamados pelo contrato, escolhem exatamente as mesmas jogadas.
+- O teste de contrato (`test/contract/`) joga partidas completas em todos os formatos e confirma que ninguém, nem os bots, vê cartas escondidas.
+- Os testes antigos (regras, bots, servidor) passam sem mudanças, só com caminhos novos.
+- Os testes no navegador também passam:
+  - partida offline;
+  - montes;
+  - figuras;
+  - pódio;
+  - 6 jogadores;
+  - distribuição animada;
+  - histórico;
+  - partida online com convite, password, equipas, conversa e recarregar a página;
+  - definições da sala.
+
+**O que fica para a Etapa 4 (Gringo), de propósito**
+
+- **Jogadas de bots fora da vez (`bots.react`).** O contrato já as prevê, mas o núcleo ainda não as chama, porque só o Gringo as usa e é com ele que se testam.
+- **Mesa base comum.** Barra de cima, assentos, histórico e animações ainda vivem na mesa do Cassino. Quando a mesa do Gringo existir, o que for igual passa para o núcleo.
+- **Folha de estilos.** Ainda é uma só (`core/client/styles.css`). Separa-se quando se souber o que o Gringo partilha.
+- **Escolha do jogo.** Com um só jogo, os menus não mostram a escolha. Aparece quando houver dois.
+
+**Site de teste:** um segundo serviço no Render, ligado ao branch da etapa, com o comando de arranque `node core/server/server.js`. O site oficial continua no `main` até à aprovação.
+

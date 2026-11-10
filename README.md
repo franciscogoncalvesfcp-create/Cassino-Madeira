@@ -1,6 +1,7 @@
-# Cassino da Madeira
+# Cassino da Madeira (plataforma de jogos)
 
-Jogo de cartas com modo offline contra bots (3 níveis) e modo online com lobbies públicos e privados.
+Jogos de cartas com modo offline contra bots e modo online com lobbies públicos e privados.
+Por agora tem o Cassino da Madeira; os próximos jogos entram como módulos (ver `ARCHITECTURE.md`).
 Não tem dependências: basta Node 20 ou mais recente.
 
 ## Experimentar no teu computador
@@ -32,11 +33,12 @@ npm run tournament
 
 ## Ficheiros
 
-- `shared/engine.js`: regras do jogo, usadas no navegador e no servidor.
-- `shared/bots.js`: níveis Fácil, Médio e Difícil.
-- `client/`: interface.
-- `server/server.js`: salas, baralho, validação de jogadas e reconexão.
-- `test/`: testes das regras, dos bots e do servidor.
+- `core/server/`: núcleo no servidor (salas, lugares, tempo real, temporizadores, bots) e a lista de jogos (`games.js`).
+- `core/client/`: plataforma no navegador (menu, lobby, conversa, definições), desenho das cartas e a lista de ficheiros do cliente (`files.js`).
+- `core/shared/names.js`: nomes dos bots e regra das equipas.
+- `games/cassino/`: o Cassino como módulo: regras (`rules.js`), bots, ligação ao contrato (`module.js`), mesa (`table.js`) e instruções.
+- `test/core/`, `test/contract/`, `test/games/`: testes do núcleo, o teste de contrato que todos os jogos têm de passar, e os testes de cada jogo.
+- `test/fixtures/cassino-golden.json`: partidas de referência do Cassino (`npm run record:golden` volta a gravá-las, só quando as regras mudam de propósito).
 - `scripts/build-offline.js`: gera a versão offline num só ficheiro HTML.
 
 ## Definições do servidor
@@ -48,3 +50,4 @@ npm run tournament
 | `MAX_ROOMS` | Número máximo de salas | 300 |
 | `BOT_DELAY_MS` | Tempo de reação dos bots | 1200 |
 | `OFFLINE_GRACE_MS` | Tempo de espera por um jogador sem ligação antes de um bot jogar por ele | 30000 |
+| `NEXT_ROUND_MS` | Tempo até a ronda seguinte começar sozinha | 45000 |

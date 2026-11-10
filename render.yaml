@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: echo "Sem dependencias para instalar"
-    startCommand: node server/server.js
+    startCommand: node core/server/server.js
     healthCheckPath: /api/health
     envVars:
       - key: TRUST_PROXY
