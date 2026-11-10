@@ -2,7 +2,7 @@
 
 Documento vivo com o que existe e com as decisões da plataforma de jogos. Quem retomar o projeto deve ler isto primeiro.
 
-- **Estado:** Etapa 1 concluída (levantamento do que existe, sem alterar código).
+- **Estado:** Etapa 1 concluída (levantamento do que existe, sem alterar código). Respostas para a Etapa 2 recebidas; dúvidas do Gringo por responder.
 - **Última atualização:** 10/11/2026, a partir do commit `4423447` do `main`.
 
 ## 1. Resumo
@@ -182,11 +182,24 @@ Fontes:
 - [Upstash: faturação](https://upstash.com/docs/redis/overall/billing)
 - [Supabase: preços](https://supabase.com/pricing)
 
-## 11. Perguntas em aberto para a Etapa 2
+## 11. Respostas para a Etapa 2 (10/11/2026)
 
-1. **Torneio com jogos de formatos diferentes.** A Sueca é a 4 em duplas e o Cassino pode ser individual. Os pontos do torneio são sempre por pessoa (cada um da dupla recebe os pontos da dupla)?
-2. **Uma ronda do torneio** é uma partida completa (por exemplo, o Cassino até 21) ou uma só mão?
-3. **Quem joga o torneio.** São sempre os mesmos jogadores do princípio ao fim? Os bots podem ocupar lugares? Alguém pode entrar a meio?
-4. **Retomar depois de um reinício.** Sem contas, chega cada jogador voltar pelo link e escolher o seu nome numa lista, com o anfitrião a confirmar?
-5. **Versão offline.** Mantém-se para todos os jogos, só para o Cassino, ou deixa de existir?
-6. **Endereço do site.** Mantém-se `cassino-da-madeira.onrender.com` ou muda para um nome da plataforma? Mudar o nome do serviço no Render muda o link.
+1. **Equipas no torneio:** cada pessoa da equipa recebe os pontos da equipa.
+2. **Ronda do torneio:** por omissão, é uma partida completa. Quem organiza pode limitá-la a um número fixo de mãos.
+3. **Jogadores:** as mesmas pessoas do início ao fim, sem entradas a meio. Os bots podem completar lugares vazios e substituir quem desapareça. O desenho tem de resolver jogos com números de jogadores diferentes (por exemplo, a Sueca é a 4).
+4. **Retomar depois de um reinício:** cada um volta pelo link e escolhe o seu nome numa lista.
+5. **Versão offline:** todos os jogos têm versão offline contra bots, como o Cassino.
+6. **Endereço:** mantém-se `cassino-da-madeira.onrender.com` por agora. O nome da plataforma decide-se quando estiver estável.
+
+## 12. Gringo: o que muda no desenho
+
+As regras do Gringo chegaram a 10/11/2026 (documento do Francisco). Têm coisas que o Cassino não tem, e que a interface comum tem de prever:
+
+- **Jogadas fora da vez:** a Jogada Rápida pode ser feita por qualquer jogador a qualquer momento. O núcleo não pode assumir que só joga quem tem a vez, e o servidor decide pela ordem de chegada.
+- **Janelas de tempo:** os 3 segundos de "Última Oportunidade" e a confirmação de "pronto" de todos antes de começar.
+- **Cartas escondidas do próprio dono:** cada jogador só vê as suas cartas quando as espreita. O servidor revela uma carta só a um jogador e só naquele momento.
+- **Fila de poderes:** vários jogadores podem ter poderes pendentes, resolvidos pela ordem em que as cartas caíram.
+- **Bots que reagem:** além de escolher a jogada na sua vez, os bots têm de decidir se fazem uma Jogada Rápida quando cai uma carta, com um tempo de reação. A memória do bot (do que viu) é o que distingue os níveis.
+- **Pontuação ao contrário:** ganha quem tem menos pontos. O torneio usa a classificação que cada jogo devolve, por isso isto não o afeta.
+
+As dúvidas sobre as regras do Gringo foram enviadas ao Francisco e as respostas entram aqui.
