@@ -46,7 +46,7 @@ Limites do plano gratuito do Render que afetam o desenho:
 | `client/app.js` | 1227 | Toda a interface | Cerca de metade |
 | `client/rules.js` | 112 | Texto das instruções | Sim |
 | `client/styles.css` | 381 | Aspeto, incluindo cartas e mesa | Misturado |
-| `client/index.html` | 30 | Esqueleto da página | Não |
+| `client/index.html` | 27 | Esqueleto da página | Não |
 | `test/*.js` | 810 | Testes das regras, dos bots e do servidor | Sobretudo do Cassino |
 | `scripts/build-offline.js` | 24 | Gera a página offline | Do Cassino |
 
