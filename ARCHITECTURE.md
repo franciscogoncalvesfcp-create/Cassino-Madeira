@@ -2,7 +2,7 @@
 
 Documento vivo com o que existe e com as decisões da plataforma de jogos. Quem retomar o projeto deve ler isto primeiro.
 
-- **Estado:** Etapa 3 aprovada e no site oficial (10/11/2026). A versão anterior está na etiqueta `cassino-v1`. Próxima: Etapa 4 (Gringo).
+- **Estado:** Etapa 3 aprovada e no site oficial (10/11/2026). A versão anterior está no branch `cassino-v1`. Próxima: Etapa 4 (Gringo).
 - **Última atualização:** 10/11/2026, a partir do commit `4423447` do `main`.
 
 ## 1. Resumo
@@ -336,7 +336,7 @@ Para já, todos os jogos carregam juntos, porque são poucos e pequenos. A pasta
 1. **Fixar o comportamento.** Antes de mexer, gravo partidas completas com sorte fixa: cada jogada e o estado final. Juntam-se aos 59 testes atuais. Depois da mudança, as mesmas partidas têm de dar exatamente o mesmo resultado.
 2. **Mudar num branch.** O motor atual passa para `games/cassino` quase sem mudanças, com uma camada que o liga ao contrato. O servidor e o cliente são partidos em núcleo e mesa do Cassino.
 3. **Testar lado a lado.** O branch vai para um segundo serviço no Render (por exemplo, `cassino-teste`). O site atual continua igual, e vocês jogam nos dois e comparam.
-4. **Juntar ao `main`** só quando aprovarem. Fica uma etiqueta `cassino-v1` com a versão antiga, para voltar atrás num minuto se for preciso.
+4. **Juntar ao `main`** só quando aprovarem. Fica um branch `cassino-v1` com a versão antiga, para voltar atrás num minuto se for preciso.
 
 ### 13.6 Como se testa
 
