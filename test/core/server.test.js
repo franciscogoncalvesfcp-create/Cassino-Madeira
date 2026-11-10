@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50'; process.env.DEAL_PAUSE_MS = '0'; process.env.CREATE_PER_MIN = '100';
+process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50'; process.env.DEAL_PAUSE_MS = '0'; process.env.CREATE_PER_MIN = '100'; process.env.BOT_REACT_SCALE = '0.005';
 const { server, rooms } = require('../../core/server/server.js');
 const E = require('../../games/cassino/rules.js');
 let base;
@@ -257,11 +257,84 @@ test('núcleo: salas pedem um jogo; jogo desconhecido fica Cassino', async () =>
   const a = await post('/api/rooms', { nick: 'Ana', game: 'xadrez', config: { numPlayers: 3 } });
   assert.strictEqual(rooms.get(a.body.code).game, 'cassino');
   const h = await (await fetch(base + '/api/health')).json();
-  assert.deepStrictEqual(h.games, ['cassino']);
+  assert.deepStrictEqual(h.games, ['cassino', 'gringo']);
   const page = await (await fetch(base + '/')).text();
   assert.match(page, /<script src="games\/cassino\/module.js"><\/script>/);
   assert.strictEqual((await fetch(base + '/games/cassino/table.js')).status, 200);
   await post(`/api/rooms/${a.body.code}/action`, { token: a.body.token, action: 'leave' });
+});
+
+test('Gringo online: partida completa com bots que fazem Jogadas Rápidas, sem fugas de cartas', async () => {
+  const GR = require('../../games/gringo/rules.js');
+  const a = await post('/api/rooms', { nick: 'Ana', game: 'gringo', config: { numPlayers: 4 }, turnSeconds: 0 });
+  const code = a.body.code, room = rooms.get(code);
+  assert.strictEqual(room.game, 'gringo');
+  const act = (action, extra) => post(`/api/rooms/${code}/action`, { token: a.body.token, action, ...extra });
+  for (let i = 1; i < 4; i++) await act('addBot', { seat: i, level: 'hard' }); // nível que não existe no Gringo: fica Normal
+  assert.ok(room.seats.slice(1).every(x => x.level === 'normal'));
+  const sa = stream(code, a.body.token); await sa.ready;
+  assert.strictEqual((await act('start')).status, 200);
+  await until(() => sa.last && sa.last.view);
+  const me = () => room.state;
+  const mv = move => act('move', { move });
+  const h0 = () => me().hands[0];
+  assert.strictEqual((await mv({ type: 'peek', slots: [h0()[0].id, h0()[1].id] })).status, 200);
+  assert.strictEqual((await mv({ type: 'ready' })).status, 200);
+  await until(() => me().phase === 'play', 4000);
+  let guard = 0;
+  while (me().phase !== 'over' && guard++ < 400) {
+    const w = GR.waitingFor(me());
+    if (w.length && w[0].seat === 0) {
+      const s = me();
+      let m;
+      if (s.powers.length) m = { type: s.power ? 'done' : 'skip' };
+      else if (s.step === 'drawn') m = { type: 'discardDrawn' };
+      else m = guard > 25 && !s.final ? { type: 'gringo' } : { type: 'draw' };
+      const r = await mv(m);
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      await sleep(5);
+      continue;
+    }
+    // O que a Ana recebe nunca mostra cartas que ela não pode saber.
+    if (sa.last && sa.last.view) {
+      const hid = GR.hidden(me(), 0);
+      const txt = JSON.stringify(sa.last.view);
+      for (const c of hid) assert.ok(!txt.includes(`"${c}"`), 'fuga: ' + c);
+    }
+    await sleep(15);
+  }
+  assert.strictEqual(me().phase, 'over');
+  await until(() => sa.last.view.phase === 'over');
+  assert.ok(me().events.some(e => e.t === 'ready' && e.seat === 3));
+  // Voltar ao lobby e jogar outra vez: começa quem ganhou
+  const winner = GR.nextStarter(me().result.ranking, 4);
+  assert.strictEqual((await act('lobby')).status, 200);
+  assert.strictEqual((await act('start')).status, 200);
+  assert.strictEqual(room.state.turn, winner);
+  sa.close();
+  await act('leave');
+});
+
+test('mudar de jogo no lobby: lugares, níveis dos bots e regras de cada jogo', async () => {
+  const a = await post('/api/rooms', { nick: 'Ana', config: { numPlayers: 4, teams: 2 } });
+  const code = a.body.code, room = rooms.get(code);
+  const act = (action, extra) => post(`/api/rooms/${code}/action`, { token: a.body.token, action, ...extra });
+  await post(`/api/rooms/${code}/join`, { nick: 'Rui' });
+  await act('addBot', { seat: 2, level: 'hard' });
+  assert.strictEqual((await act('setConfig', { game: 'xadrez' })).status, 400);
+  assert.strictEqual((await act('setConfig', { game: 'gringo' })).status, 200);
+  assert.strictEqual(room.game, 'gringo'); assert.strictEqual(room.config.teams, 0); assert.strictEqual(room.seats.length, 4);
+  assert.strictEqual(room.seats[2].level, 'normal');
+  assert.strictEqual((await act('setConfig', { config: { numPlayers: 7 } })).status, 200);
+  assert.strictEqual(room.seats.length, 7);
+  for (let i = 0; i < 4; i++) await post(`/api/rooms/${code}/join`, { nick: 'P' + i });
+  // 6 pessoas no Gringo e muda para Cassino: fica a 6
+  assert.strictEqual((await act('setConfig', { game: 'cassino' })).status, 200);
+  assert.strictEqual(room.config.numPlayers, 6);
+  assert.strictEqual(room.seats.filter(x => x && !x.isBot).length, 6);
+  const list = await (await fetch(base + '/api/rooms')).json();
+  await act('leave');
+  assert.ok(list.rooms.every(r => typeof r.game === 'string'));
 });
 
 test('jogador que perde a ligação: bot joga por ele e volta com o mesmo token', async () => {

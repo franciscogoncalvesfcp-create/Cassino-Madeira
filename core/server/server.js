@@ -18,6 +18,7 @@ const BOT_DELAY = +process.env.BOT_DELAY_MS || 1200;
 const OFFLINE_GRACE = +process.env.OFFLINE_GRACE_MS || 30000; // quanto se espera por quem perdeu a ligação
 const DEAL_PAUSE = process.env.DEAL_PAUSE_MS !== undefined ? +process.env.DEAL_PAUSE_MS : null; // tempo para a animação de distribuição
 const CREATE_PER_MIN = +process.env.CREATE_PER_MIN || 10;
+const REACT_SCALE = process.env.BOT_REACT_SCALE !== undefined ? +process.env.BOT_REACT_SCALE : 1; // para os testes
 const HOST_GRACE = +process.env.HOST_GRACE_MS || 20000;
 const NEXT_ROUND_WAIT = +process.env.NEXT_ROUND_MS || 45000;
 const EMPTY_ROOM_TTL = +process.env.EMPTY_ROOM_MS || 10 * 60000;
@@ -207,8 +208,22 @@ const ctxNow = () => ({ now: Date.now(), rng });
 // Depois de cada mudança no jogo: nova versão, novos temporizadores, todos atualizados.
 function changed(room) {
   room.version++;
+  // Guarda a classificação para saber quem começa a partida seguinte.
+  if (room.state && room.mod.over(room.state) && room.resultVersion !== room.state) {
+    room.resultVersion = room.state;
+    room.lastResult = { game: room.game, numPlayers: room.config.numPlayers, ranking: room.mod.result(room.state) };
+  }
   schedule(room);
   broadcast(room);
+}
+// Jogada de um bot fora da vez (ex.: Jogada Rápida). Confirma que ainda a quer fazer antes de jogar.
+function botReact(room, seat, level, action, key) {
+  const M = room.mod, s = room.state;
+  room.reactTried[key] = true;
+  const again = M.bots.react(level, M.bots.view(s, seat), rng);
+  if (!again || JSON.stringify(again.action) !== JSON.stringify(action)) { schedule(room); return; }
+  const r = M.apply(s, seat, action, ctxNow());
+  if (r.ok) changed(room); else schedule(room);
 }
 // Jogada de um bot. Se o bot falhar, usa a jogada de recurso do módulo.
 function botAct(room, seat, level) {
@@ -247,6 +262,16 @@ function schedule(room) {
     if (w.kind === 'turn' && (room.deadline === null || at < room.deadline)) room.deadline = at;
     due.push({ at, run: () => fallbackAct(room, w.seat) });
   }
+  // Bots que querem jogar fora da vez.
+  if (!room.reactTried || room.reactVersion !== room.version) { room.reactTried = {}; room.reactVersion = room.version; }
+  room.seats.forEach((p, seat) => {
+    if (!p || !p.isBot) return;
+    const r = M.bots.react(p.level, M.bots.view(s, seat), rng);
+    if (!r || !r.action) return;
+    const key = seat + ':' + JSON.stringify(r.action);
+    if (room.reactTried[key]) return;
+    due.push({ at: start + (r.delayMs || 0) * REACT_SCALE, run: () => botReact(room, seat, p.level, r.action, key) });
+  });
   const own = M.nextDeadline(s, now);
   if (own !== null && own !== undefined) due.push({ at: own, run: () => { M.tick(s, Date.now(), rng); changed(room); } });
   if (!due.length) return;
@@ -335,8 +360,21 @@ function doAction(room, p, b) {
     }
     case 'setConfig': {
       requireHost(room, p); requireLobby(room);
-      const cfg = room.mod.normalizeConfig(Object.assign({}, room.config, b.config || {}));
+      let base = room.config, mod = room.mod;
+      if (b.game !== undefined && b.game !== room.game) {
+        if (!GAMES[b.game]) throw new HttpError(400, 'Esse jogo não existe.');
+        mod = GAMES[b.game];
+        // Mudar de jogo: o número de lugares mais pequeno que chegue para quem já está sentado.
+        const people = room.seats.filter(x => x && !x.isBot).length;
+        const counts = mod.players.concat(mod.teams.map(t => t.players)).sort((x, y) => x - y);
+        base = { numPlayers: counts.find(c => c >= Math.max(people, room.seats.length)) || counts.find(c => c >= people) || counts[counts.length - 1] };
+      }
+      const cfg = mod.normalizeConfig(Object.assign({}, base, b.config || {}));
       resizeSeats(room, cfg.numPlayers);
+      if (mod !== room.mod) {
+        room.game = b.game; room.mod = mod; room.lastResult = null;
+        for (const x of room.seats) if (x && x.isBot && !mod.botLevels.includes(x.level)) x.level = mod.defaultBotLevel;
+      }
       room.config = cfg;
       if (b.turnSeconds !== undefined && [0, 30, 60].includes(+b.turnSeconds)) room.turnSeconds = +b.turnSeconds;
       room.options = validOptions(b.options, room.options);
@@ -358,7 +396,10 @@ function doAction(room, p, b) {
     case 'start': {
       requireHost(room, p); requireLobby(room);
       if (room.seats.some(x => !x)) throw new HttpError(409, 'Há lugares vazios. Espera por amigos ou adiciona bots.');
-      room.state = room.mod.setup(room.config, rng, { dealPauseMs: DEAL_PAUSE, nextRoundMs: NEXT_ROUND_WAIT });
+      const last = room.lastResult;
+      const starter = last && last.game === room.game && last.numPlayers === room.config.numPlayers && room.mod.nextStarter
+        ? room.mod.nextStarter(last.ranking, room.config) : undefined;
+      room.state = room.mod.setup(room.config, rng, { dealPauseMs: DEAL_PAUSE, nextRoundMs: NEXT_ROUND_WAIT, starter });
       room.phase = 'game';
       changed(room);
       return;

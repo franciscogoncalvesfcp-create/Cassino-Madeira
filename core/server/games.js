@@ -2,4 +2,5 @@
 // (test/contract/contract.test.js).
 module.exports = {
   cassino: require('../../games/cassino/module.js'),
+  gringo: require('../../games/gringo/module.js'),
 };

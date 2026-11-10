@@ -23,6 +23,7 @@ for (const [id, M] of Object.entries(GAMES)) {
     for (const k of ['normalizeConfig', 'setup', 'sanitizeAction', 'apply', 'waitingFor', 'nextDeadline', 'tick', 'view', 'over', 'result', 'fallback', 'hidden'])
       assert.strictEqual(typeof M[k], 'function', k);
     for (const k of ['view', 'choose', 'react']) assert.strictEqual(typeof M.bots[k], 'function', 'bots.' + k);
+    if (M.nextStarter !== undefined) assert.strictEqual(typeof M.nextStarter, 'function');
     assert.strictEqual(M.id, id);
     assert.ok(M.botLevels.includes(M.defaultBotLevel));
   });
@@ -53,7 +54,7 @@ for (const [id, M] of Object.entries(GAMES)) {
         const rng = seeded(1 + g * 31 + fmt.numPlayers * 7 + fmt.teams);
         const cfg = M.normalizeConfig(fmt);
         const s = M.setup(cfg, rng, { nextRoundMs: 0, dealPauseMs: 0 });
-        let now = 0, steps = 0;
+        let now = 0, steps = 0, reacted = 0;
         while (!M.over(s)) {
           assert.ok(++steps < 50000, 'a partida não acaba');
           const waiting = M.waitingFor(s, now);
@@ -73,7 +74,18 @@ for (const [id, M] of Object.entries(GAMES)) {
               assert.deepStrictEqual(leaks(M.bots.view(s, seat), hidden), [], `o bot do lugar ${seat} vê cartas escondidas`);
             }
           }
-          const w = waiting[0];
+          // Jogadas fora da vez dos bots (ex.: Jogada Rápida): quando um bot quer, a jogada tem de ser legal.
+          for (let seat = 0; seat < cfg.numPlayers; seat++) {
+            const r = M.bots.react(M.defaultBotLevel, M.bots.view(s, seat), rng);
+            if (r && r.action) {
+              assert.ok(Number.isFinite(r.delayMs) && r.delayMs >= 0, 'tempo de reação inválido');
+              const rr = M.apply(s, seat, r.action, { now, rng });
+              assert.ok(rr.ok, `reação do bot ilegal: ${rr.reason}`);
+              reacted++;
+            }
+          }
+          if (M.over(s) || !M.waitingFor(s, now).length) continue;
+          const w = M.waitingFor(s, now)[0];
           const level = M.botLevels[(steps + g) % M.botLevels.length] === 'hard' ? M.defaultBotLevel : M.botLevels[(steps + g) % M.botLevels.length];
           const useFallback = steps % 7 === 0;
           const a = useFallback ? M.fallback(s, w.seat, rng) : M.bots.choose(level, M.bots.view(s, w.seat), rng);
