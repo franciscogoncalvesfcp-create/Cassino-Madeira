@@ -2,7 +2,7 @@
 
 Documento vivo com o que existe e com as decisões da plataforma de jogos. Quem retomar o projeto deve ler isto primeiro.
 
-- **Estado:** Etapa 1 concluída (levantamento do que existe, sem alterar código). Respostas para a Etapa 2 recebidas; dúvidas do Gringo por responder.
+- **Estado:** Etapa 2 (desenho) proposta na secção 13, à espera de aprovação. Ainda não há código novo.
 - **Última atualização:** 10/11/2026, a partir do commit `4423447` do `main`.
 
 ## 1. Resumo
@@ -204,18 +204,166 @@ As regras do Gringo chegaram a 10/11/2026 (documento do Francisco). Têm coisas 
 
 ### Respostas do Francisco sobre o Gringo (10/11/2026)
 
-- **Jogadores:** "todas as que forem possíveis". O limite exato ainda está por fechar.
+- **Jogadores:** de 2 a 8. O baralho chegava para mais, mas não cabem num ecrã de telemóvel.
 - **Quem começa:** na primeira mão é à sorte; nas seguintes começa quem ganhou a anterior.
-- **Empate:** é empate, e os empatados ficam na mesma posição. Para a mão seguinte, começa o empatado que deixa o outro jogar o mais cedo possível (a regra exata ainda está por confirmar).
+- **Sentido:** no dos ponteiros do relógio.
+- **Empate:** é empate, e os empatados ficam na mesma posição. Na partida seguinte, começa o empatado que deixa os outros empatados jogarem o mais cedo possível.
+- **Uma partida é uma só mão.** Acaba de duas formas:
+  - alguém diz Gringo no início do seu turno; cada um dos outros joga mais uma vez, revelam-se as cartas e ganha quem tiver menos pontos;
+  - alguém fica sem cartas (com Jogadas Rápidas). A última volta começa logo no jogador seguinte, e cada um dos outros joga mais uma vez. Exemplo do Francisco: com A, B, C e D, se A fica sem cartas depois da jogada de C, jogam D, B e por fim C. Quem ficou sem cartas tem 0 pontos e pode perder, por exemplo para quem tenha só um Rei vermelho (-3).
 - **Gringo falhado:** não há penalização. Quem diz Gringo e não fica com menos pontos empata ou perde.
 - **Compra:** só do baralho. O lixo começa vazio.
 - **Reciclagem:** a última carta posta no lixo fica na mesa, para ainda se poder fazer uma Jogada Rápida sobre ela. As outras voltam ao baralho.
 - **Jogada Rápida:**
   - só com as próprias cartas;
-  - vale enquanto essa carta estiver no topo, incluindo enquanto alguém usa um poder, até o jogador seguinte jogar, e sempre dentro do limite de tempo;
+  - vale enquanto essa carta estiver no topo: inclui o tempo em que alguém usa um poder (antes ou depois de fazer a troca) e acaba quando o jogador seguinte joga;
   - se duas pessoas a fizerem ao mesmo tempo, ganha quem chega primeiro ao servidor.
 - **Jogada Rápida falhada:** a carta aparece a todos numa animação e volta virada para baixo para a mão de quem a atirou, que recebe ainda uma carta extra do baralho sem a ver.
+- **Jogada Rápida com figuras:** conta a figura, não a cor. Um Rei vermelho pode ir sobre um Rei preto, e Joker sobre Joker.
 - **Poderes:** os Reis vermelhos também têm o poder do Rei. As cartas de quem disse Gringo não ficam protegidas. Os poderes valem na última volta.
 - **Mexer nas cartas:** os outros veem o movimento.
 
-Por fechar: o fim da partida (quantas mãos), o limite de jogadores, se reis de cor diferente contam como iguais na Jogada Rápida, o limite de tempo e o sentido do jogo.
+- **Tempo por turno:** quem cria a sala escolhe, como no Cassino.
+
+## 13. Etapa 2: desenho da plataforma (proposta, por aprovar)
+
+### 13.1 As três peças
+
+1. **Núcleo, no servidor.** Salas, códigos, convites, passwords, lugares e equipas, anfitrião, conversa, ligação em tempo real, reconexão, temporizadores, bots que substituem quem sai, torneios e a gravação dos torneios. Não conhece nenhum jogo em concreto.
+2. **Módulos de jogo.** Um por jogo, cada um na sua pasta:
+   - regras em código puro, sem rede nem página;
+   - bots;
+   - mesa (a interface do jogo);
+   - instruções.
+3. **Cliente da plataforma.** Menu, lobby, conversa, definições e ligação. Abre a mesa do jogo escolhido.
+
+Tudo o que é igual em todos os jogos (lobby, reconexão, temporizadores, torneio) fica feito uma vez, no núcleo.
+
+### 13.2 O contrato de um módulo
+
+Cada jogo entrega um objeto com estas peças. Foi pensado para servir o Cassino (turnos, cartas escondidas) e o Gringo (jogadas fora da vez, janelas de tempo, cartas que nem o dono vê, fila de poderes).
+
+```js
+{
+  id: 'gringo', name: 'Gringo',
+  players: [2, 3, 4, 5, 6, 7, 8],        // quantidades permitidas
+  teams: [],                               // formatos de equipa possíveis, ex.: { players: 4, teams: 2 }
+  options: [...],                          // opções do jogo (ex.: meta 21/32 no Cassino), com valores por omissão
+
+  setup(config, rng) -> state             // começa uma partida
+  apply(state, seat, action, ctx) -> { ok, reason }   // valida e aplica; ctx = { now, rng }
+  waitingFor(state, now) -> [{ seat, kind }]          // de quem se espera ação (turno, "pronto", poder)
+  nextDeadline(state) -> instante | null              // próxima janela de tempo do próprio jogo (ex.: 3 s finais)
+  tick(state, now, rng)                                // o que acontece quando essa janela fecha
+  view(state, seat, now) -> objeto                     // só o que esse lugar pode ver nesse momento
+  over(state) -> boolean
+  result(state) -> [{ seats: [...], place, score }]    // classificação final, com empates no mesmo lugar
+  fallback(state, seat, rng) -> action                 // jogada quando o tempo acaba ou o jogador caiu
+  nextStarter(previousResult, config) -> seat          // quem começa a partida seguinte
+
+  bots: {
+    levels: ['facil', 'medio', 'dificil'],             // começa com 1 nível nos jogos novos
+    view(state, seat) -> o que o bot pode saber         // nunca cartas escondidas
+    choose(level, botView, rng) -> action | null        // na sua vez
+    react(level, botView, rng) -> { action, delayMs } | null   // fora da vez (ex.: Jogada Rápida), com tempo de reação
+  }
+}
+```
+
+**Regras do contrato**
+
+- **O tempo entra de fora.** O tempo chega como `now`, e a sorte como `rng`. Assim, as regras continuam puras e os testes repetem-se sempre igual.
+- **O núcleo serializa as ações.** Recebe as ações uma a uma, pela ordem de chegada. Numa Jogada Rápida disputada, ganha quem chega primeiro.
+- **O tempo por turno é do núcleo.** É a opção da sala (30 s, 60 s ou sem limite). Quando acaba, o núcleo pede ao módulo uma jogada de recurso (`fallback`).
+- **As janelas do próprio jogo são do módulo.** Por exemplo, os 3 segundos finais do Gringo: o módulo diz quando fecham (`nextDeadline`) e o que acontece a seguir (`tick`).
+- **Informação privada sai sempre de `view`.** No Gringo, enquanto um jogador espreita uma carta, só a vista dele a mostra, e só durante esse momento. As cartas viradas para baixo levam um identificador sem significado, que acompanha a carta quando muda de sítio, para os outros verem o movimento como numa mesa a sério.
+- **Animações.** Cada vista leva os acontecimentos públicos recentes, numerados, para a mesa saber o que animar: Jogada Rápida falhada, troca do Valete, distribuição.
+
+### 13.3 Torneio
+
+**O que se configura**
+
+- a sequência de rondas: o jogo de cada ronda, as opções desse jogo e, opcionalmente, um número fixo de mãos;
+- os pontos por posição;
+- o desempate.
+
+**Jogadores:** são as mesmas pessoas do princípio ao fim. Os bots completam lugares e substituem quem desaparece. Nas equipas, cada pessoa recebe os pontos da equipa.
+
+**Números de jogadores diferentes em cada jogo**
+
+1. Se o jogo aceita o número de pessoas do torneio, joga-se numa só mesa.
+2. Se não aceita esse número mas aceita um maior, os bots completam até ao número seguinte permitido. Por exemplo, 5 pessoas no Cassino jogam a 6 com 1 bot.
+3. Se há mais pessoas do que o jogo aceita, abrem-se várias mesas ao mesmo tempo, com as pessoas espalhadas por igual e bots a completar. Por exemplo, 6 pessoas na Sueca dão 2 mesas de 4, cada uma com 3 pessoas e 1 bot.
+4. Nos jogos de equipas, as equipas sorteiam-se em cada ronda. O organizador pode acertá-las antes de começar.
+
+**Pontos (proposta por omissão)**
+
+- Em cada mesa, ordenam-se só as pessoas; os bots não recebem pontos.
+- O 1.º recebe tantos pontos quantas pessoas há na mesa menos 1, e o último recebe 0.
+- Quem empata partilha o lugar e recebe os mesmos pontos.
+- O organizador pode trocar esta tabela por outra.
+
+**Desempate (proposta por omissão):** mais vitórias; depois mais segundos lugares; depois o melhor resultado na última ronda. Se continuar igual, fica empatado.
+
+**Retomar**
+
+- Se alguém perde a ligação, retoma como hoje: com o mesmo token, e um bot joga por ele enquanto não volta.
+- No fim de cada ronda, grava-se no Neon a configuração do torneio, os nomes, os tokens cifrados e a classificação.
+- Depois de um reinício do servidor, o link do torneio mostra a lista de nomes, e cada um escolhe o seu. A ronda que ia a meio recomeça.
+- Se o Neon falhar, o torneio continua só em memória, como hoje.
+
+### 13.4 Pastas
+
+```
+core/server/    salas, tempo real, temporizadores, torneio, gravação (store)
+core/client/    menu, lobby, conversa, definições, ligação, componentes visuais
+shared/cards/   baralho, desenho das cartas (o SVG atual, mais Jokers)
+games/cassino/  rules.js (o motor atual), bots.js, table.js (mesa), instructions.js, styles.css
+games/gringo/   o mesmo
+test/core/      testes do núcleo e do torneio
+test/contract/  teste de contrato: corre igual para todos os jogos
+test/games/     testes de regras de cada jogo
+scripts/        página offline e torneio de bots
+```
+
+Para já, todos os jogos carregam juntos, porque são poucos e pequenos. A pasta de cada jogo fica isolada, e o carregamento sob demanda pode juntar-se mais tarde sem mudar o contrato.
+
+**Versão offline:** uma só página com todos os jogos contra bots, gerada como hoje.
+
+### 13.5 Passar o Cassino para o novo sistema sem o partir
+
+1. **Fixar o comportamento.** Antes de mexer, gravo partidas completas com sorte fixa: cada jogada e o estado final. Juntam-se aos 59 testes atuais. Depois da mudança, as mesmas partidas têm de dar exatamente o mesmo resultado.
+2. **Mudar num branch.** O motor atual passa para `games/cassino` quase sem mudanças, com uma camada que o liga ao contrato. O servidor e o cliente são partidos em núcleo e mesa do Cassino.
+3. **Testar lado a lado.** O branch vai para um segundo serviço no Render (por exemplo, `cassino-teste`). O site atual continua igual, e vocês jogam nos dois e comparam.
+4. **Juntar ao `main`** só quando aprovarem. Fica uma etiqueta `cassino-v1` com a versão antiga, para voltar atrás num minuto se for preciso.
+
+### 13.6 Como se testa
+
+- **Teste de contrato.** O mesmo teste corre para todos os jogos:
+  - joga milhares de partidas com jogadas legais e bots até ao fim;
+  - confirma que nenhuma vista mostra cartas que esse lugar não pode ver;
+  - confirma que os bots só fazem jogadas legais;
+  - confirma que a classificação final faz sentido.
+
+  Um jogo novo só entra se passar.
+- **Testes de regras** de cada jogo, um por regra e por caso especial combinado convosco.
+- **Testes do núcleo:** salas, reconexão, temporizadores, Jogadas Rápidas simultâneas e torneio (pontos, desempates, retomar depois de um reinício).
+- **Testes no navegador** com 2 a 4 jogadores simulados.
+- **Testes com amigos** no serviço de teste, no fim de cada etapa.
+
+### 13.7 Decisões com alternativas
+
+| Decisão | Recomendo | Alternativa | Porquê |
+|---|---|---|---|
+| Tempo real | Manter o atual (Server-Sent Events e pedidos) | WebSockets | Já funciona, não precisa de dependências, e a diferença de rapidez nas Jogadas Rápidas é pequena. Muda-se se no Gringo se notar atraso. |
+| Contrato | Ações a qualquer momento, com prazos | Só turnos | Só turnos não serve para o Gringo. |
+| Mais pessoas que lugares | Várias mesas com bots a completar | Rodar quem fica de fora | Ninguém fica parado. |
+| Gravar torneios | Neon gratuito | Não gravar | Custa zero e aguenta reinícios. |
+| Interface | Continuar sem framework | React ou parecido | Mantém tudo igual ao que funciona e permite a página offline num só ficheiro. |
+
+### 13.8 Ordem das próximas etapas
+
+1. **Etapa 3:** extrair o núcleo, com o Cassino como primeiro módulo. Inclui o teste de contrato e o serviço de teste.
+2. **Etapa 4:** Gringo (regras e testes; depois bots e mesa).
+3. **Etapa 5:** torneio, com gravação no Neon.
+4. **Depois:** Sueca e King, um de cada vez.
