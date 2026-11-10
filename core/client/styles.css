@@ -379,3 +379,55 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
 .confetes i { position: absolute; top: -14px; width: 8px; height: 13px; border-radius: 1px; animation: cai 2s linear both; }
 @keyframes cai { to { transform: translate(var(--x), 105vh) rotate(var(--r)); } }
 @media (prefers-reduced-motion: reduce) { .podio.anima .degrau, .podio.anima .degrau-nome { animation: none; } .confetes { display: none; } }
+
+/* Gringo */
+.g-op { flex-wrap: wrap; overflow-y: auto; max-height: 42vh; }
+.g-assento { flex: 0 1 auto; }
+.g-mao-op { display: flex; flex-wrap: wrap; gap: 4px; --w: clamp(30px, 6.5vw, 42px); }
+.g-slot { position: relative; padding: 0; border: 0; background: none; border-radius: 6px; display: block; color: inherit; transition: transform calc(120ms * var(--speed)); }
+.g-slot:disabled { cursor: default; }
+.g-slot:hover:not(:disabled):not(.sel) { transform: translateY(-3px); }
+.g-slot.sel { transform: translateY(-8px); }
+.g-slot.sel .card { box-shadow: 0 0 0 3px var(--sinal), 0 8px 14px rgba(0,0,0,.45); }
+.g-slot.grande { --w: var(--cw); }
+.g-slot.grande.sel { transform: translateY(-13px); }
+.g-num {
+  position: absolute; left: -4px; top: -6px; min-width: 19px; height: 19px; padding: 0 4px; border-radius: 10px; z-index: 2;
+  background: var(--casco-fundo); color: var(--cal); border: 1.5px solid var(--cal); font-family: var(--carta); font-weight: 700; font-size: 12px; line-height: 16px; text-align: center;
+}
+.g-slot.grande .g-num { min-width: 24px; height: 24px; line-height: 21px; font-size: 14px; border-radius: 12px; }
+.g-slot.g-troca .card { animation: g-troca calc(900ms * var(--speed)) ease; }
+.g-slot.g-espreita .card { box-shadow: 0 0 0 3px var(--ok), 0 2px 5px rgba(0,0,0,.4); }
+.g-slot.g-novo .card, .g-lixo.g-novo .card { box-shadow: 0 0 0 3px var(--cal), 0 2px 5px rgba(0,0,0,.4); }
+@keyframes g-troca { 0% { transform: rotateY(0); } 50% { transform: rotateY(90deg) translateY(-6px); } 100% { transform: rotateY(0); } }
+.g-centro {
+  flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: clamp(14px, 5vw, 40px); flex-wrap: wrap;
+  padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.g-pilha { display: flex; flex-direction: column; align-items: center; gap: 6px; --w: calc(var(--cw) * .95); font-size: 13.5px; color: var(--texto-2); font-variant-numeric: tabular-nums; }
+.g-vazio { display: block; width: var(--w); aspect-ratio: 5 / 7; border-radius: 7%/5%; border: 1.5px dashed var(--texto-2); }
+.g-aberta { color: var(--sinal); }
+.g-comprada .card { box-shadow: 0 0 0 3px var(--sinal), 0 8px 14px rgba(0,0,0,.45); }
+.g-comprada.g-outro .card { box-shadow: 0 1.5px 3px rgba(0,0,0,.4); opacity: .8; }
+.g-comprada span:last-child { color: var(--texto); }
+.g-mao {
+  display: flex; flex-wrap: wrap; gap: clamp(8px, 2vw, 16px); justify-content: center; min-height: calc(var(--cw) * 1.4 + 28px); align-items: flex-end;
+  padding-block: 16px 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.g-setas { display: inline-flex; gap: 4px; }
+.g-conta { color: var(--sinal); font-weight: 700; font-variant-numeric: tabular-nums; }
+.g-flash {
+  position: fixed; z-index: 46; left: 50%; top: 40%; transform: translate(-50%, -50%); pointer-events: none; --w: 64px;
+  display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px); padding: 14px 18px; border-radius: 6px;
+  background: var(--casco-fundo); box-shadow: 0 14px 34px rgba(0,0,0,.5); border-left: 6px solid var(--zarcao); font-size: 15px;
+  animation: anuncio 2.2s ease both;
+}
+.quadro td.g-cartas-fim { white-space: normal; }
+.g-cartas-fim .mini { margin: 1px 0; }
+@media (max-width: 560px) { .quadro td.g-cartas-fim { text-align: left; } .g-quadro th, .g-quadro td { padding-inline: 5px; } }
+@media (max-height: 560px) {
+  .g-mao-op { --w: 24px; }
+  .g-mao { min-height: 0; padding-block: 8px 6px; }
+  .g-pilha { --w: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .g-slot.g-troca .card, .g-flash { animation: none; } }

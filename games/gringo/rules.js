@@ -169,7 +169,7 @@
         if (from === to) return { ok: true };
         const [x] = hand.splice(from, 1);
         hand.splice(to, 0, x);
-        event(s, { t: 'move', seat, slot: a.slot, to });
+        event(s, { t: 'move', seat, slot: a.slot, label: x.label, to });
         return { ok: true };
       }
 
@@ -243,7 +243,7 @@
         s.drawn = null;
         place(s, seat, old.card);
         s.step = 'placed';
-        event(s, { t: 'swap', seat, slot: old.id, newSlot: fresh.id, card: old.card });
+        event(s, { t: 'swap', seat, slot: old.id, newSlot: fresh.id, label: old.label, card: old.card });
         return { ok: true };
       }
 
@@ -265,7 +265,7 @@
           s.snapOpen = false; s.snapTaken = true; // só a primeira conta
           const pw = powerOf(slot.card);
           if (pw) s.powers.push({ seat, power: pw, card: slot.card });
-          event(s, { t: 'snap', seat, slot: slot.id, card: slot.card });
+          event(s, { t: 'snap', seat, slot: slot.id, label: slot.label, card: slot.card });
           if (!hand.length && !s.final) startFinal(s, seat, true, s.phase === 'play' && s.step === 'start' && seat !== s.turn);
           else if (!hand.length && s.final) s.final.remaining = s.final.remaining.filter(p => p !== seat);
           return { ok: true };
@@ -274,13 +274,13 @@
         s.shown[slot.card] = true;
         s.publicSlots[slot.id] = slot.card;
         if (same) { // igual, mas alguém foi mais rápido: sem castigo
-          event(s, { t: 'snapLate', seat, slot: slot.id, card: slot.card });
+          event(s, { t: 'snapLate', seat, slot: slot.id, label: slot.label, card: slot.card });
           return { ok: true };
         }
         const extra = takeFromDeck(s, ctx.rng);
-        let penalty = null;
-        if (extra) { const x = newSlot(s, extra, nextLabel(hand)); hand.push(x); penalty = x.id; }
-        event(s, { t: 'snapFail', seat, slot: slot.id, card: slot.card, penalty });
+        let penalty = null, penaltyLabel = null;
+        if (extra) { const x = newSlot(s, extra, nextLabel(hand)); hand.push(x); penalty = x.id; penaltyLabel = x.label; }
+        event(s, { t: 'snapFail', seat, slot: slot.id, label: slot.label, card: slot.card, penalty, penaltyLabel });
         return { ok: true };
       }
 
@@ -303,8 +303,8 @@
         if (mine > 1) return fail('Escolhe cartas de dois jogadores diferentes.');
         const sa = findSlot(s, A.seat, A.slot), sb = findSlot(s, Bref.seat, Bref.slot);
         if (!sa || !sb) return fail('Escolhe duas cartas que estejam na mesa.');
+        event(s, { t: 'jack', seat, a: { seat: A.seat, slot: sa.id, label: sa.label }, b: { seat: Bref.seat, slot: sb.id, label: sb.label } });
         swapSlots(s, A.seat, sa, Bref.seat, sb);
-        event(s, { t: 'jack', seat, a: { seat: A.seat, slot: sa.id }, b: { seat: Bref.seat, slot: sb.id } });
         popPower(s, ctx);
         return { ok: true };
       }
@@ -316,7 +316,7 @@
         if (!slot) return fail('Com a Dama só espreitas uma carta tua.');
         remember(s, seat, slot);
         s.power = { kind: 'Q', seat, target: { seat, slot: slot.id } };
-        event(s, { t: 'queen', seat, target: { seat, slot: slot.id } });
+        event(s, { t: 'queen', seat, target: { seat, slot: slot.id, label: slot.label } });
         return { ok: true };
       }
       case 'king': {
@@ -329,7 +329,7 @@
         if (!slot) return fail('Escolhe uma carta de um adversário.');
         remember(s, seat, slot);
         s.power = { kind: 'K', seat, target: { seat: t.seat, slot: slot.id } };
-        event(s, { t: 'king', seat, target: { seat: t.seat, slot: slot.id } });
+        event(s, { t: 'king', seat, target: { seat: t.seat, slot: slot.id, label: slot.label } });
         return { ok: true };
       }
       case 'kingSwap': {
@@ -339,8 +339,8 @@
         const theirs = findSlot(s, p.target.seat, p.target.slot);
         if (!mineSlot) return fail('Escolhe uma carta tua para trocar.');
         if (!theirs) { popPower(s, ctx); return { ok: true }; } // a carta saiu entretanto
+        event(s, { t: 'kingSwap', seat, a: { seat, slot: mineSlot.id, label: mineSlot.label }, b: { seat: p.target.seat, slot: theirs.id, label: theirs.label } });
         swapSlots(s, seat, mineSlot, p.target.seat, theirs);
-        event(s, { t: 'kingSwap', seat, a: { seat, slot: mineSlot.id }, b: { seat: p.target.seat, slot: theirs.id } });
         popPower(s, ctx);
         return { ok: true };
       }

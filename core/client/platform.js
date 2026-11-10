@@ -17,7 +17,13 @@
     document.body.dataset.back = prefs.back;
     save('prefs', prefs);
   }
-  const offlineCfg = Object.assign({ mode: '2', level: 'medium', target: '21' }, load('offline', {})); // valores do Cassino
+  // Escolhas guardadas por jogo. As de antes da plataforma (mode/level/target soltos) eram do Cassino.
+  const offlineCfg = (function () {
+    const raw = load('offline', {}) || {};
+    const c = { game: raw.game || 'cassino', per: raw.per || {} };
+    if (!raw.per && (raw.mode || raw.level || raw.target)) c.per.cassino = { mode: raw.mode, level: raw.level, target: raw.target };
+    return c;
+  })();
 
   // --- Som ------------------------------------------------------------------
   let audio = null;
@@ -65,6 +71,7 @@
     get screen() { return screen; },
     go: (s, o) => go(s, o),
     baseOverlay: () => baseOverlay(),
+    confetti: () => confetti(),
     chatHtml: L => chatHtml(L),
   };
   P.cards = window.PlatformCards.create({ prefs, esc, mark: id => !!(G && G.markCard && G.markCard(id)) });
@@ -74,6 +81,28 @@
   G = GAMES.cassino;
   const useGame = id => { if (GAMES[id]) G = GAMES[id]; return G; };
   function resetTable() { P.ui.menuOpen = false; P.ui.chatOpen = false; G.reset(); }
+  const perGame = (store, game) => (store.per[game.id] = Object.assign({}, game.defaults, store.per[game.id] || {}));
+  const gameChoice = (field, current) => (Object.keys(GAMES).length > 1
+    ? `<div class="campo"><span class="rotulo">Jogo</span>${options(field, Object.values(GAMES).map(g => ({ v: g.id, t: g.name, d: g.tagline })), current)}</div>` : '');
+  function confetti() {
+    if (reducedMotion()) return;
+    const box = document.createElement('div');
+    box.className = 'confetes';
+    box.setAttribute('aria-hidden', 'true');
+    const cols = ['#f4bc23', '#cf3b22', '#fbfaf4', '#1b6a93'];
+    for (let i = 0; i < 70; i++) {
+      const c = document.createElement('i');
+      c.style.left = Math.random() * 100 + '%';
+      c.style.background = cols[i % 4];
+      c.style.animationDelay = 300 + Math.random() * 900 + 'ms';
+      c.style.animationDuration = 1600 + Math.random() * 1400 + 'ms';
+      c.style.setProperty('--x', (Math.random() * 120 - 60) + 'px');
+      c.style.setProperty('--r', Math.random() * 720 + 'deg');
+      box.appendChild(c);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 4400);
+  }
   // Menu e conversa por cima da mesa, iguais em todos os jogos.
   function baseOverlay() {
     if (P.ui.menuOpen) {
@@ -124,7 +153,7 @@
         <div class="marca">
           <div class="leque" aria-hidden="true">${G.menuArt()}</div>
           <h1>Cassino</h1>
-          <p>O jogo de cartas da Madeira. Joga contra bots ou com amigos.</p>
+          <p>Jogos de cartas da Madeira: ${Object.values(GAMES).map(g => esc(g.name)).join(' e ')}. Joga contra bots ou com amigos.</p>
         </div>
         <nav class="menu-lista" aria-label="Menu principal">
           ${saved ? '<button class="btn prim" data-act="resume">Continuar partida</button>' : ''}
@@ -145,12 +174,15 @@
     return `<div class="escolhas" role="group">${list.map(o => `<button type="button" class="escolha" data-act="opt" data-field="${field}" data-val="${esc(o.v)}" aria-pressed="${String(o.v) === String(current)}"><b>${esc(o.t)}</b>${o.d ? `<small>${esc(o.d)}</small>` : ''}</button>`).join('')}</div>`;
   }
   function renderOffline() {
+    useGame(offlineCfg.game);
+    const o = perGame(offlineCfg, G);
     app.innerHTML = `<div class="pagina tabuas">${topo('Jogar contra bots', 'menu')}
       <div class="pagina-corpo">
-        <div class="campo"><span class="rotulo">Nível dos bots</span>${options('level', G.levels, offlineCfg.level)}
+        ${gameChoice('game', G.id)}
+        <div class="campo"><span class="rotulo">Nível dos bots</span>${options('level', G.levels, o.level)}
           <p class="nota">Nenhum bot vê as tuas cartas nem o baralho.</p></div>
-        <div class="campo"><span class="rotulo">Jogadores</span>${options('mode', G.modes, offlineCfg.mode)}</div>
-        <div class="campo"><span class="rotulo">Duração</span>${options('target', G.targets, offlineCfg.target)}</div>
+        <div class="campo"><span class="rotulo">Jogadores</span>${options('mode', G.modes, o.mode)}</div>
+        ${G.targets.length ? `<div class="campo"><span class="rotulo">Duração</span>${options('target', G.targets, o.target)}</div>` : ''}
         <div class="acoes-fim"><button class="btn prim" data-act="start-offline">Começar partida</button></div>
       </div></div>`;
   }
@@ -171,8 +203,11 @@
   }
 
   function renderRules() {
+    // Durante uma partida mostra as regras desse jogo; no menu dá para escolher.
+    const tabs = !session && Object.keys(GAMES).length > 1
+      ? `<div class="escolhas" role="group" aria-label="Jogo">${Object.values(GAMES).map(g => `<button type="button" class="escolha" data-act="rules-game" data-game="${g.id}" aria-pressed="${g === G}"><b>${esc(g.name)}</b></button>`).join('')}</div>` : '';
     app.innerHTML = `<div class="pagina tabuas">${topo('Instruções', session ? 'game' : 'menu')}
-      <div class="pagina-corpo regras">${G.instructions()}</div></div>`;
+      <div class="pagina-corpo regras">${tabs}${G.instructions()}</div></div>`;
   }
 
   // --- Sessão local (contra bots, no próprio dispositivo) -------------------------
@@ -191,18 +226,42 @@
     clearTimeout(this.timer);
     const s = this.state, mod = this.mod;
     this.persist();
-    const bots = mod.waitingFor(s, Date.now()).filter(w => w.seat !== 0);
-    if (!bots.length) return;
-    const p = bots[0].seat;
-    const busy = this.game.busyUntil ? this.game.busyUntil() : 0;
-    const delay = (SPEEDS[prefs.speed] || 1150) + Math.max(0, busy - Date.now());
-    this.timer = setTimeout(() => {
-      if (session !== this) return;
-      const m = mod.bots.choose(this.level, mod.bots.view(s, p), Math.random);
-      const r = m ? mod.apply(s, p, m, localCtx()) : { ok: false };
-      if (!r.ok) { console.error('bot', r, m); mod.apply(s, p, mod.fallback(s, p, Math.random), localCtx()); }
-      this.game.update(); this.tick();
-    }, delay);
+    if (mod.over(s)) return;
+    this.version = (this.version || 0) + 1;
+    if (this.reactVersion !== this.version) { this.reactTried = {}; this.reactVersion = this.version; }
+    const now = Date.now();
+    const busy = Math.max(0, (this.game.busyUntil ? this.game.busyUntil() : 0) - now);
+    const speed = SPEEDS[prefs.speed] || 1150;
+    const due = [];
+    for (const w of mod.waitingFor(s, now)) if (w.seat !== 0) due.push({ at: now + speed + busy, run: () => this.botChoose(w.seat) });
+    // Bots que querem jogar fora da vez (ex.: Jogada Rápida no Gringo).
+    for (let p = 1; p < this.names.length; p++) {
+      const r = mod.bots.react(this.level, mod.bots.view(s, p), Math.random);
+      if (!r || !r.action) continue;
+      const key = p + ':' + JSON.stringify(r.action);
+      if (this.reactTried[key]) continue;
+      due.push({ at: now + busy + r.delayMs * speed / 1150, run: () => this.botReact(p, r.action, key) });
+    }
+    const d = mod.nextDeadline(s, now);
+    if (d !== null && d !== undefined) due.push({ at: d, run: () => { mod.tick(s, Date.now(), Math.random); this.game.update(); this.tick(); } });
+    if (!due.length) return;
+    due.sort((x, y) => x.at - y.at);
+    const first = due[0];
+    this.timer = setTimeout(() => { if (session === this) first.run(); }, Math.max(0, first.at - Date.now()));
+  };
+  LocalSession.prototype.botChoose = function (p) {
+    const s = this.state, mod = this.mod;
+    const m = mod.bots.choose(this.level, mod.bots.view(s, p), Math.random);
+    const r = m ? mod.apply(s, p, m, localCtx()) : { ok: false };
+    if (!r.ok) { console.error('bot', r, m); const f = mod.fallback(s, p, Math.random); if (f) mod.apply(s, p, f, localCtx()); }
+    this.game.update(); this.tick();
+  };
+  LocalSession.prototype.botReact = function (p, action, key) {
+    const s = this.state, mod = this.mod;
+    this.reactTried[key] = true;
+    const again = mod.bots.react(this.level, mod.bots.view(s, p), Math.random);
+    if (again && JSON.stringify(again.action) === JSON.stringify(action) && mod.apply(s, p, action, localCtx()).ok) this.game.update();
+    this.tick();
   };
   LocalSession.prototype.play = function (m) {
     const r = this.mod.apply(this.state, 0, m, localCtx());
@@ -212,17 +271,18 @@
   LocalSession.prototype.next = function () { this.play({ type: 'next' }); };
   LocalSession.prototype.leave = function () { clearTimeout(this.timer); };
 
-  function startLocal(game, cfg, level, names) {
+  function startLocal(game, cfg, level, names, settings) {
     if (session && session.kind === 'local') session.leave();
     useGame(game.id);
-    session = new LocalSession(game, game.module.setup(cfg, Math.random), level, names);
+    session = new LocalSession(game, game.module.setup(cfg, Math.random, settings || {}), level, names);
     resetTable(); go('game'); session.tick();
   }
   function startOffline() {
-    const cfg = G.modeToCfg(offlineCfg.mode, offlineCfg.target);
+    const o = perGame(offlineCfg, G);
+    const cfg = G.modeToCfg(o.mode, o.target);
     save('offline', offlineCfg);
     const me = chosenName() || 'Tu';
-    startLocal(G, cfg, offlineCfg.level, [me].concat(N.pickNames(cfg.numPlayers - 1, Math.random, [me])));
+    startLocal(G, cfg, o.level, [me].concat(N.pickNames(cfg.numPlayers - 1, Math.random, [me])));
   }
   function resumeOffline() {
     const d = load('save', null);
@@ -322,8 +382,12 @@
   }
 
   const online = { rooms: [], err: '', timer: null, code: '', pass: null, info: null, busy: false };
-  const createCfg = Object.assign({ name: '', visibility: 'public', password: '', mode: '2', target: '21', turn: '60' }, load('create', {}));
-  createCfg.password = '';
+  const createCfg = (function () {
+    const raw = load('create', {}) || {};
+    const c = { name: raw.name || '', visibility: raw.visibility || 'public', password: '', turn: raw.turn || '60', game: raw.game || 'cassino', per: raw.per || {} };
+    if (!raw.per && (raw.mode || raw.target)) c.per.cassino = { mode: raw.mode, target: raw.target };
+    return c;
+  })();
 
   async function refreshRooms() {
     try { online.rooms = (await api('/api/rooms')).rooms; online.err = ''; }
@@ -336,7 +400,7 @@
     const gameOf = r => GAMES[r.game] || G;
     if (online.err) { box.innerHTML = `<p class="erro">${esc(online.err)}</p>`; return; }
     if (!online.rooms.length) { box.innerHTML = '<div class="vazio">Não há salas públicas abertas. Cria uma e partilha o link com os teus amigos.</div>'; return; }
-    box.innerHTML = '<div class="salas">' + online.rooms.map(r => `<div class="sala"><div><b>${esc(r.name)}</b><small>${esc(gameOf(r).modeName(r.config))}, ${esc(gameOf(r).targetText(r.config))}. ${r.players} de ${r.capacity} lugares.</small></div>
+    box.innerHTML = '<div class="salas">' + online.rooms.map(r => `<div class="sala"><div><b>${esc(r.name)}</b><small>${esc(gameOf(r).name)}: ${esc(gameOf(r).modeName(r.config))}, ${esc(gameOf(r).targetText(r.config))}. ${r.players} de ${r.capacity} lugares.</small></div>
       <button class="btn peq prim" data-act="join-public" data-code="${esc(r.code)}">Entrar</button></div>`).join('') + '</div>';
   }
   function needName() {
@@ -380,14 +444,17 @@
   }
 
   function renderCreate() {
+    useGame(createCfg.game);
+    const o = perGame(createCfg, G);
     app.innerHTML = `<div class="pagina tabuas">${topo('Criar sala', 'online')}
       <div class="pagina-corpo">
         <div class="campo"><label for="nome-online">O teu nome</label><input id="nome-online" type="text" maxlength="20" value="${esc(prefs.name)}" autocomplete="nickname"></div>
         <div class="campo"><label for="nome-sala">Nome da sala</label><input id="nome-sala" type="text" maxlength="30" value="${esc(createCfg.name)}" placeholder="Ex.: Mesa do café"></div>
+        ${gameChoice('c-game', G.id)}
         <div class="campo"><span class="rotulo">Quem pode entrar</span>${options('c-visibility', [{ v: 'public', t: 'Pública', d: 'Aparece na lista de salas' }, { v: 'private', t: 'Privada', d: 'Só com código e password' }], createCfg.visibility)}</div>
         <div class="campo" id="campo-pw" ${createCfg.visibility === 'private' ? '' : 'hidden'}><label for="pw-sala">Password da sala</label><input id="pw-sala" type="password" maxlength="40" autocomplete="new-password" value="${esc(createCfg.password)}" placeholder="Pelo menos 3 caracteres"></div>
-        <div class="campo"><span class="rotulo">Jogadores</span>${options('c-mode', G.modes, createCfg.mode)}<p class="nota">No lobby podes preencher lugares vazios com bots.</p></div>
-        <div class="campo"><span class="rotulo">Duração</span>${options('c-target', G.targets, createCfg.target)}</div>
+        <div class="campo"><span class="rotulo">Jogadores</span>${options('c-mode', G.modes, o.mode)}<p class="nota">No lobby podes preencher lugares vazios com bots e mudar de jogo.</p></div>
+        ${G.targets.length ? `<div class="campo"><span class="rotulo">Duração</span>${options('c-target', G.targets, o.target)}</div>` : ''}
         <div class="campo"><span class="rotulo">Tempo por jogada</span>${options('c-turn', [{ v: '30', t: '30 segundos' }, { v: '60', t: '60 segundos' }, { v: '0', t: 'Sem limite' }], createCfg.turn)}<p class="nota">Quando o tempo acaba, o jogo faz uma jogada por ti.</p></div>
         <p class="erro" id="err-create" hidden></p>
         <div class="acoes-fim"><button class="btn prim" data-act="create-room">Criar sala</button></div>
@@ -428,7 +495,7 @@
     app.innerHTML = `<div class="pagina tabuas">${topo(L.name, 'leave-room')}
       <div class="pagina-corpo">
         <div class="bloco"><span class="rotulo">Código da sala</span><div class="codigo">${esc(L.code)}</div>
-          <p class="nota">${L.visibility === 'private' ? 'Sala privada. Envia o link e a password aos teus amigos.' : 'Sala pública. Também aparece na lista de salas.'} ${esc(G.modeName(L.config))}, ${esc(tgtTxt)}${L.turnSeconds ? `, ${L.turnSeconds} segundos por jogada` : ', sem limite de tempo'}.</p>
+          <p class="nota">${esc(G.name)}. ${L.visibility === 'private' ? 'Sala privada. Envia o link e a password aos teus amigos.' : 'Sala pública. Também aparece na lista de salas.'} ${esc(G.modeName(L.config))}, ${esc(tgtTxt)}${L.turnSeconds ? `, ${L.turnSeconds} segundos por jogada` : ', sem limite de tempo'}.</p>
           <div class="acoes-fim"><button class="btn peq" data-act="copy" data-text="${esc(link)}">Copiar link de convite</button></div></div>
         <div class="bloco"><div class="equipa-topo"><h3>${teams ? 'Equipas' : 'Lugares'}</h3>${isHost && teams ? '<button class="btn peq" data-act="shuffle-teams">Baralhar equipas</button>' : ''}</div>${seatsHtml}</div>
         <div class="acoes-fim">${isHost ? `<button class="btn prim" data-act="start-online" ${filled ? '' : 'disabled'}>Começar partida</button>${filled ? '' : '<p class="nota">Espera por amigos ou preenche os lugares vazios com bots.</p>'}` : '<p>Quem criou a sala começa a partida.</p>'}</div>
@@ -443,12 +510,13 @@
     const opts = G.roomOptions;
     if (!isHost) {
       const off = opts.filter(([k]) => o[k] === false).map(([, t]) => t.toLowerCase());
-      return `<div class="bloco"><h3>Regras da sala</h3><p class="nota">${off.length ? 'Quem criou a sala desligou: ' + esc(off.join(', ')) + '.' : 'Ajudas, histórico e avisos estão ligados.'}</p></div>`;
+      return `<div class="bloco"><h3>Regras da sala</h3><p class="nota">${off.length ? 'Quem criou a sala desligou: ' + esc(off.join(', ')) + '.' : 'Está tudo ligado: ' + esc(opts.map(([, t]) => t.toLowerCase()).join(', ')) + '.'}</p></div>`;
     }
     const onOff = (k) => [{ v: true, t: 'Ligado' }, { v: false, t: 'Desligado' }];
     return `<div class="bloco"><h3>Definições da sala</h3><p class="nota">Só tu podes mudar isto, e só antes de começar.</p>
+      ${gameChoice('l-game', G.id)}
       <div class="campo"><span class="rotulo">Modo de jogo</span>${options('l-mode', G.modes, G.modeOf(L.config))}</div>
-      <div class="campo"><span class="rotulo">Duração</span>${options('l-target', G.targets, L.config.target)}</div>
+      ${G.targets.length ? `<div class="campo"><span class="rotulo">Duração</span>${options('l-target', G.targets, L.config.target)}</div>` : ''}
       <div class="campo"><span class="rotulo">Tempo por jogada</span>${options('l-turn', [{ v: '30', t: '30 segundos' }, { v: '60', t: '60 segundos' }, { v: '0', t: 'Sem limite' }], String(L.turnSeconds))}</div>
       ${opts.map(([k, t, d]) => `<div class="campo"><span class="rotulo">${t}</span><p class="nota">${d}.</p>${options('l-' + k, onOff(k), o[k] !== false)}</div>`).join('')}
     </div>`;
@@ -473,7 +541,13 @@
       case 'clear-save': save('save', null); renderSettings(); break;
       case 'opt': handleOption(t); break;
       case 'start-offline': startOffline(); break;
-      case 'again': { const prev = session; startLocal(prev.game, prev.state.config, prev.level, prev.names); break; }
+      case 'again': {
+        const prev = session, mod = prev.mod;
+        const starter = mod.over(prev.state) && mod.nextStarter ? mod.nextStarter(mod.result(prev.state), prev.state.config) : undefined;
+        startLocal(prev.game, prev.state.config, prev.level, prev.names, { starter });
+        break;
+      }
+      case 'rules-game': useGame(t.dataset.game); renderRules(); break;
       case 'back-lobby': session.action('lobby'); break;
       case 'quit':
         resetTable();
@@ -522,7 +596,8 @@
     if (f.startsWith('l-')) {
       const k = f.slice(2), L = session && session.lobby;
       if (!L) return;
-      if (k === 'mode') session.action('setConfig', { config: G.modeToCfg(String(val), L.config.target) });
+      if (k === 'game') session.action('setConfig', { game: String(val) });
+      else if (k === 'mode') session.action('setConfig', { config: G.modeToCfg(String(val), L.config.target) });
       else if (k === 'target') session.action('setConfig', { config: { target: String(val) } });
       else if (k === 'turn') session.action('setConfig', { turnSeconds: +val });
       else session.action('setConfig', { options: { [k]: val } });
@@ -530,9 +605,15 @@
     }
     if (f.startsWith('c-')) {
       keepCreateInputs();
-      createCfg[f.slice(2)] = String(val); renderCreate(); return;
+      const k = f.slice(2);
+      if (k === 'game') createCfg.game = String(val);
+      else if (k === 'mode' || k === 'target') perGame(createCfg, G)[k] = String(val);
+      else createCfg[k] = String(val);
+      renderCreate(); return;
     }
-    offlineCfg[f] = String(val); renderOffline();
+    if (f === 'game') offlineCfg.game = String(val);
+    else perGame(offlineCfg, G)[f] = String(val);
+    renderOffline();
   }
   function keepCreateInputs() {
     const a = document.getElementById('nome-sala'); if (a) createCfg.name = a.value;
@@ -570,7 +651,7 @@
     try {
       const r = await api('/api/rooms', {
         nick, name: createCfg.name.trim() || `Mesa de ${nick}`, visibility: createCfg.visibility, password: pw,
-        game: G.id, config: G.modeToCfg(createCfg.mode, createCfg.target), turnSeconds: +createCfg.turn,
+        game: G.id, config: G.modeToCfg(perGame(createCfg, G).mode, perGame(createCfg, G).target), turnSeconds: +createCfg.turn,
       });
       createCfg.password = '';
       enterRoom(r.code, r.token);

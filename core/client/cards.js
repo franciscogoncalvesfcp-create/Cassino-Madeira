@@ -17,6 +17,7 @@
     10: [[32, 28], [68, 28], [50, 42], [32, 55], [68, 55], [32, 85, 0, 1], [68, 85, 0, 1], [50, 98, 0, 1], [32, 112, 0, 1], [68, 112, 0, 1]],
   };
   function parse(id) {
+    if (id.startsWith('JK')) return { rank: 'JK', suit: id === 'JK1' ? 'R' : 'B', value: null, joker: true }; // Jokers: JK1 vermelho, JK2 preto
     const rank = id.slice(0, -1), suit = id.slice(-1);
     const value = rank === 'A' ? 1 : /^\d+$/.test(rank) ? +rank : null;
     return { rank, suit, value };
@@ -27,12 +28,21 @@
     const { prefs, esc } = opts;
     const mark = opts.mark || (() => false);
     const cache = {};
-    function label(id) { const c = parse(id); return (RANK_NAME[c.rank] || c.rank) + ' de ' + SUIT_NAME[c.suit]; }
+    function label(id) { const c = parse(id); return c.joker ? 'Joker' : (RANK_NAME[c.rank] || c.rank) + ' de ' + SUIT_NAME[c.suit]; }
     function suitColor(s) {
       if (prefs.colors4) return { S: '#1b1f24', H: '#c42417', D: '#1658b8', C: '#137a3d' }[s];
       return s === 'H' || s === 'D' ? '#c42417' : '#1b1f24';
     }
+    function jokerSvg(id) {
+      const col = id === 'JK1' ? '#c42417' : '#1b1f24';
+      const letters = 'JOKER'.split('').map((ch, i) => `<text x="12.500" y="${20 + i * 15}" text-anchor="middle" font-family="Zilla Slab,Rockwell,Georgia,serif" font-weight="700" font-size="14">${ch}</text>`).join('');
+      const star = 'M50 38 L57.6 59.5 L80.4 59.9 L62.3 73.6 L68.8 95.4 L50 82.5 L31.2 95.4 L37.7 73.6 L19.6 59.9 L42.4 59.5 Z';
+      return `<svg viewBox="0 0 100 140" fill="${col}" aria-hidden="true">${letters}<g transform="rotate(180 50 70)">${letters}</g>
+        <rect x="24" y="24" width="52" height="92" fill="none" stroke="${col}" stroke-width="1.500"/><path d="${star}"/>
+        <rect x="24" y="104" width="52" height="5" fill="#f4bc23"/><rect x="24" y="109" width="52" height="7" fill="#cf3b22"/></svg>`;
+    }
     function svg(id) {
+      if (id.startsWith('JK')) return jokerSvg(id);
       const { rank: r, suit: s, value: v } = parse(id), col = suitColor(s);
       const use = (x, y, size, flip) => `<use href="#s-${s}" x="${x - size / 2}" y="${y - size / 2}" width="${size}" height="${size}"${flip ? ` transform="rotate(180 ${x} ${y})"` : ''}/>`;
       const corner = `<text x="12.500" y="24" text-anchor="middle" font-family="Zilla Slab,Rockwell,Georgia,serif" font-weight="700" font-size="${r === '10' ? 19 : 22}" ${r === '10' ? 'letter-spacing="-1.500"' : ''}>${r}</text>${use(12.5, 35, 14)}`;
@@ -55,6 +65,7 @@
     }
     const back = extra => `<span class="card costas" ${extra || ''}></span>`;
     function mini(id) {
+      if (id.startsWith('JK')) return `<span class="mini ${id === 'JK1' ? 'verm' : ''}" aria-label="Joker">Joker</span>`;
       const s = parse(id).suit;
       const cls = prefs.colors4 ? { H: 'verm', D: 'azul', C: 'verde', S: '' }[s] : (s === 'H' || s === 'D' ? 'verm' : '');
       return `<span class="mini ${cls}" aria-label="${esc(label(id))}">${parse(id).rank}<svg viewBox="0 0 24 24"><use href="#s-${s}"/></svg></span>`;

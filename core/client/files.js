@@ -10,6 +10,11 @@ module.exports = {
     'games/cassino/module.js',
     'games/cassino/instructions.js',
     'games/cassino/table.js',
+    'games/gringo/rules.js',
+    'games/gringo/bots.js',
+    'games/gringo/module.js',
+    'games/gringo/instructions.js',
+    'games/gringo/table.js',
     'core/client/platform.js',
   ],
 };

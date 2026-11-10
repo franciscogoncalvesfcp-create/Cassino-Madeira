@@ -429,3 +429,36 @@ games/cassino/instructions.js  instruções
 
 **Site de teste:** um segundo serviço no Render, ligado ao branch da etapa, com o comando de arranque `node core/server/server.js`. O site oficial continua no `main` até à aprovação.
 
+
+## 15. Etapa 4: Gringo, segundo módulo
+
+**O que entrou**
+
+- `games/gringo/rules.js`: motor de regras com as respostas da secção 12 e dos 17 pontos combinados.
+  - De 2 a 8 jogadores; uma partida é uma mão.
+  - Preparação: cada um espreita duas cartas e diz que está pronto.
+  - Comprar ou dizer Gringo; trocar ou deitar fora; poderes do Conde, da Dama e do Rei (também nos Reis vermelhos), pela ordem em que caem no lixo.
+  - Jogada Rápida fora da vez, aberta até o jogador seguinte jogar; certa, tarde (sem castigo) ou errada (carta mostrada e carta extra).
+  - Gringo voluntário e automático, última volta e 3 segundos de última oportunidade.
+  - Mudar cartas de lugar a qualquer momento, exceto durante um poder.
+- `games/gringo/bots.js`: bot Normal. Lembra-se do que viu, só faz Jogada Rápida com certeza e diz Gringo quando acha que tem poucos pontos.
+- `games/gringo/module.js`: o contrato da secção 13.2, sem mudanças ao contrato.
+- `games/gringo/table.js` e `instructions.js`: mesa e instruções.
+
+**O que mudou no núcleo**
+
+- O núcleo passou a chamar `bots.react`, nos dois sítios: servidor e partida offline. As jogadas fora da vez dos bots têm um atraso e voltam a ser verificadas antes de se fazerem.
+- A escolha do jogo aparece no menu offline, ao criar sala, no lobby e nas instruções. Cada jogo guarda as suas escolhas (modo, nível, duração).
+- `nextStarter` (opcional) decide quem começa a partida seguinte. No Gringo é quem ganhou; num empate, o empatado que deixa os outros jogar mais cedo.
+- As cartas passaram a ter Jokers.
+
+**O que fica igual, de propósito**
+
+- A mesa base comum e a separação da folha de estilos ainda não se fizeram. As duas mesas partilham classes (barra, assentos, histórico, folha do fim), mas o desenho do centro é muito diferente. Volta-se a isto com a Sueca, que é mais parecida com o Cassino na mesa.
+
+**Verificação**
+
+- 158 testes automáticos, incluindo partidas ao acaso do Gringo em que se confirma que as cartas se conservam e que ninguém vê o que não deve.
+- No navegador: partidas inteiras de Gringo offline com 2, 4 e 8 jogadores (computador e telemóvel), com poderes, setas, Jogada Rápida, Gringo, jogar outra vez e continuar depois de recarregar.
+- Partida online de Gringo com duas pessoas e um bot, até ao fim e de volta ao lobby.
+- O Cassino foi testado outra vez offline e online, sem diferenças.

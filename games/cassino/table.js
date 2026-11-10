@@ -640,6 +640,7 @@
 
     return {
       id: 'cassino', name: 'Cassino da Madeira', module: root.CassinoModule,
+      tagline: 'Capturar, empilhar e fazer clarezas',
       modes: MODES, modeToCfg, modeOf, modeName, targets: TARGETS, targetText, levels: LEVELS, levelName: LEVEL_NAME,
       defaults: { mode: '2', level: 'medium', target: '21' },
       roomOptions: ROOM_OPTIONS,
