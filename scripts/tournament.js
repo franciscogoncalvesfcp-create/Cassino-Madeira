@@ -1,5 +1,5 @@
 // Torneio entre níveis: node scripts/tournament.js [rondas]
-const E = require('../shared/engine.js'), B = require('../shared/bots.js');
+const E = require('../games/cassino/rules.js'), B = require('../games/cassino/bots.js');
 function seeded(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const N = +process.argv[2] || 400;
 function duel(A, Bb, n) {

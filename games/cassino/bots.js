@@ -1,6 +1,6 @@
-// Bots do Cassino. Recebem só o que o jogador pode saber (engine.botView).
+// Bots do Cassino. Recebem só o que o jogador pode saber (rules.js, botView).
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'));
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./rules.js'));
   else root.CassinoBots = factory(root.CassinoEngine);
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (E) {
   'use strict';
@@ -181,13 +181,5 @@
     if (level === 'hard') return hard(view, rng, opts);
     return medium(view, rng);
   }
-  // Nomes dos bots: cada partida sorteia os seus.
-  const NAMES = ['Zita', 'Agostinho', 'Conceição', 'Mestre Gil', 'Lurdes', 'Nélio', 'Gorete', 'Firmino', 'Rosário', 'Bernardete',
-    'Duarte', 'Ilídio', 'Odete', 'Jacinto', 'Fátima', 'Tó Zé', 'Albertina', 'Gualberto', 'Natércia', 'Silvino',
-    'Manuela', 'Abel', 'Graça', 'Teodoro', 'Celeste', 'Martinho', 'Dulce', 'Ezequiel', 'Aurora', 'Leonel'];
-  function pickNames(n, rng, taken) {
-    const used = new Set(taken || []);
-    return E.shuffle(NAMES.filter(x => !used.has(x)), rng || Math.random).slice(0, n);
-  }
-  return { choose, easy, medium, hard, NAMES, pickNames };
+  return { choose, easy, medium, hard };
 });
