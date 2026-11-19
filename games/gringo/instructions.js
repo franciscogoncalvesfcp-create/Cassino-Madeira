@@ -70,7 +70,7 @@ ${ex(c('KH') + c('JK1') + c('AS'), 'Estas três cartas somam -2 pontos.')}
 
 <section id="g-rapida">
 <h3>Jogada Rápida</h3>
-<p>Quando cai uma carta no lixo, qualquer jogador, mesmo fora da vez, pode atirar para cima uma carta sua igual (o mesmo número ou figura; a cor não conta). Pode fazê-lo até o jogador seguinte jogar, mesmo enquanto alguém usa um poder.</p>
+<p>Quando cai uma carta no lixo, qualquer jogador, mesmo fora da vez, pode atirar para cima uma carta sua igual (o mesmo número ou figura; a cor não conta). Pode fazê-lo até cair outra carta no lixo: mesmo que o jogador seguinte já tenha comprado, e mesmo enquanto alguém usa um poder.</p>
 <ul>
   <li><b>Certa:</b> a carta sai da tua mão. Se tiver poder, podes usá-lo.</li>
   <li><b>Tarde:</b> se a tua carta era igual mas alguém foi mais rápido, ela mostra-se e volta para a tua mão, sem castigo. Ganha quem chega primeiro ao servidor.</li>
@@ -94,8 +94,8 @@ ${ex(c('7C') + c('7H'), 'Saiu um 7 de Paus. Se tiveres a certeza de que a tua ca
 <h3>Como jogar aqui</h3>
 <ul>
   <li>No início, toca em duas cartas tuas e em <b>Espreitar</b>. Memoriza-as e carrega em <b>Estou pronto</b>.</li>
-  <li>Na tua vez, carrega em <b>Comprar</b> ou <b>Gringo</b>. Com a carta comprada, toca numa carta tua para trocar, ou carrega em <b>Deitar fora</b>.</li>
-  <li>Para fazer uma Jogada Rápida, toca numa carta tua e carrega em <b>Jogada Rápida</b>.</li>
+  <li>Na tua vez, toca no baralho para comprar, ou carrega em <b>Gringo</b>. Com a carta comprada, toca numa carta tua para trocar, ou carrega em <b>Deitar fora</b>.</li>
+  <li>Para fazer uma Jogada Rápida, toca duas vezes seguidas numa carta tua. Também podes tocar uma vez e carregar em <b>Jogada Rápida</b>.</li>
   <li>Para mudar uma carta de lugar, toca nela e usa as setas.</li>
   <li>Nos poderes, toca nas cartas que queres usar, tuas ou dos adversários, e confirma.</li>
   <li>O botão <b>Histórico</b> mostra tudo o que aconteceu, com os números das cartas.</li>

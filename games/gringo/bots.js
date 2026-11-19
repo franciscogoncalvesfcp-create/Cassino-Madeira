@@ -83,7 +83,7 @@
     const top = G.rankOf(v.discardTop);
     const slot = v.hands[v.me].find(x => v.known[x.id] !== undefined && G.rankOf(v.known[x.id]) === top && !G.isRedKing(v.known[x.id]));
     if (!slot) return null;
-    return { action: { type: 'snap', slot: slot.id }, delayMs: 800 + Math.floor(rng() * 1000) };
+    return { action: { type: 'snap', slot: slot.id }, delayMs: 1500 + Math.floor(rng() * 1500) };
   }
 
   return { choose, react };

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50'; process.env.DEAL_PAUSE_MS = '0'; process.env.CREATE_PER_MIN = '100'; process.env.BOT_REACT_SCALE = '0.005';
+process.env.BOT_DELAY_MS = '5'; process.env.OFFLINE_GRACE_MS = '150'; process.env.NEXT_ROUND_MS = '50'; process.env.DEAL_PAUSE_MS = '0'; process.env.CREATE_PER_MIN = '100'; process.env.BOT_REACT_SCALE = '0.005'; process.env.BOT_PAUSE_SCALE = '0.005';
 const { server, rooms } = require('../../core/server/server.js');
 const E = require('../../games/cassino/rules.js');
 let base;

@@ -19,6 +19,7 @@ const OFFLINE_GRACE = +process.env.OFFLINE_GRACE_MS || 30000; // quanto se esper
 const DEAL_PAUSE = process.env.DEAL_PAUSE_MS !== undefined ? +process.env.DEAL_PAUSE_MS : null; // tempo para a animação de distribuição
 const CREATE_PER_MIN = +process.env.CREATE_PER_MIN || 10;
 const REACT_SCALE = process.env.BOT_REACT_SCALE !== undefined ? +process.env.BOT_REACT_SCALE : 1; // para os testes
+const PAUSE_SCALE = process.env.BOT_PAUSE_SCALE !== undefined ? +process.env.BOT_PAUSE_SCALE : 1; // pausas pedidas pelo jogo antes de um bot jogar; para os testes
 const HOST_GRACE = +process.env.HOST_GRACE_MS || 20000;
 const NEXT_ROUND_WAIT = +process.env.NEXT_ROUND_MS || 45000;
 const EMPTY_ROOM_TTL = +process.env.EMPTY_ROOM_MS || 10 * 60000;
@@ -253,7 +254,7 @@ function schedule(room) {
   for (const w of M.waitingFor(s, now)) {
     const p = room.seats[w.seat];
     const delay = w.delayMs || 0;
-    if (p.isBot) { due.push({ at: start + BOT_DELAY + delay, run: () => botAct(room, w.seat, p.level) }); continue; }
+    if (p.isBot) { due.push({ at: start + BOT_DELAY + delay * PAUSE_SCALE, run: () => botAct(room, w.seat, p.level) }); continue; }
     const limits = [];
     if (room.turnSeconds && w.kind === 'turn') limits.push(start + room.turnSeconds * 1000 + delay);
     if (!p.connected) limits.push(now + Math.max(1000, OFFLINE_GRACE - (now - p.lastSeen)));

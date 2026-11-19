@@ -17,7 +17,12 @@
 
     const ui = {
       sel: [], lastSeq: 0, flash: {}, logDrawer: false, logStick: true, countdown: null,
-      reset() { this.sel = []; this.lastSeq = 0; this.flash = {}; this.logDrawer = false; this.logStick = true; clearInterval(this.countdown); clearTimeout(this.flashTimer); },
+      flip: new Set(), ghosts: {}, lastTap: null, revealAt: 0, revealEnd: 0,
+      reset() {
+        this.sel = []; this.lastSeq = 0; this.flash = {}; this.logDrawer = false; this.logStick = true;
+        this.flip = new Set(); Object.values(this.ghosts).forEach(g => g.remove()); this.ghosts = {}; this.lastTap = null; this.revealAt = 0; this.revealEnd = 0;
+        clearInterval(this.countdown); clearTimeout(this.flashTimer); clearTimeout(this.revealTimer);
+      },
     };
 
     // --- Quem é quem ---------------------------------------------------------------
@@ -100,16 +105,30 @@
       const mark = (id, cls) => { if (id) ui.flash[id] = { cls, until }; };
       for (const e of fresh) {
         switch (e.t) {
-          case 'jack': case 'kingSwap': mark(e.a.slot, 'g-troca'); mark(e.b.slot, 'g-troca'); sfx.card(); break;
+          case 'jack': case 'kingSwap': mark(e.a.slot, 'g-troca'); mark(e.b.slot, 'g-troca'); ui.flip.add(e.a.slot); ui.flip.add(e.b.slot); sfx.card(); break;
           case 'queen': case 'king': mark(e.target.slot, 'g-espreita'); break;
           case 'swap': mark(e.newSlot, 'g-novo'); sfx.card(); break;
-          case 'move': mark(e.slot, 'g-novo'); break;
+          case 'move': mark(e.slot, 'g-novo'); (v.hands[e.seat] || []).forEach(x => ui.flip.add(x.id)); break;
           case 'draw': case 'discard': sfx.card(); break;
           case 'snap': sfx.capture(); break;
           case 'snapFail': case 'snapLate': mark(e.penalty, 'g-novo'); showCard(e, v); break;
           case 'gringo': announce(e.auto ? 'Gringo automático' : 'Gringo!', eventText(e, v)); sfx.last(); break;
           case 'lastChance': announce('Última oportunidade', '3 segundos para Jogadas Rápidas.'); break;
-          case 'over': if (v.result && v.result.ranking.some(x => x.place === 1 && x.seats.includes(v.me))) { sfx.win(); P.confetti(); } break;
+          case 'over': {
+            // As cartas viram-se uma a uma; o quadro do fim aparece depois.
+            const total = v.hands.reduce((n, h) => n + h.length, 0);
+            ui.revealAt = Date.now();
+            ui.revealStep = Math.min(170, 2400 / Math.max(1, total));
+            ui.revealEnd = reducedMotion() ? 0 : ui.revealAt + total * ui.revealStep + 900;
+            const won = v.result && v.result.ranking.some(x => x.place === 1 && x.seats.includes(v.me));
+            clearTimeout(ui.revealTimer);
+            ui.revealTimer = setTimeout(() => {
+              if (P.screen !== 'game' || !P.session) return;
+              if (P.session.view()) renderGame();
+              if (won) { sfx.win(); P.confetti(); }
+            }, Math.max(0, ui.revealEnd - Date.now()));
+            break;
+          }
         }
       }
       const mine = v.phase !== 'over' && v.powers.length === 0 && v.phase === 'play' && v.turn === v.me && v.step === 'start';
@@ -142,7 +161,21 @@
       const sel = ui.sel.some(s => s.id === x.id);
       const f = ui.flash[x.id];
       const cls = ['g-slot', big ? 'grande' : '', sel ? 'sel' : '', f && f.until > Date.now() ? f.cls : ''].filter(Boolean).join(' ');
-      return `<button class="${cls}" data-act="g-pick" data-seat="${seat}" data-id="${esc(x.id)}" ${selectable ? '' : 'disabled'} aria-pressed="${sel}" aria-label="Carta ${x.label} ${esc(whose(seat, v))}${x.card ? ': ' + esc(P.cards.label(x.card)) : ''}">${x.card ? card(x.card) : back()}<span class="g-num">${x.label}</span></button>`;
+      let face = x.card ? card(x.card) : back();
+      const now = Date.now();
+      if (v.phase === 'over' && x.card && ui.revealEnd > now && revealOrder[x.id] !== undefined) {
+        const d = Math.round(ui.revealAt + revealOrder[x.id] * ui.revealStep - now);
+        face = `<span class="g-vira" style="--d:${d}ms">${back()}${card(x.card)}</span>`;
+      }
+      return `<button class="${cls}" data-act="g-pick" data-seat="${seat}" data-id="${esc(x.id)}" ${selectable ? '' : 'disabled'} aria-pressed="${sel}" aria-label="Carta ${x.label} ${esc(whose(seat, v))}${x.card ? ': ' + esc(P.cards.label(x.card)) : ''}">${face}<span class="g-num">${x.label}</span></button>`;
+    }
+    // Ordem de revelação no fim: a partir de quem disse Gringo, no sentido dos ponteiros do relógio.
+    let revealOrder = {};
+    function computeRevealOrder(v) {
+      revealOrder = {};
+      const n = v.config.numPlayers, start = v.final ? v.final.by : 0;
+      let k = 0;
+      for (let i = 0; i < n; i++) for (const x of v.hands[(start + i) % n]) revealOrder[x.id] = k++;
     }
     function badges(p, v) {
       const b = [];
@@ -159,7 +192,7 @@
       return `<div class="assento g-assento ${turn ? 'vez' : ''} ${off ? 'fora' : ''}" data-seat="${p}">
         <div class="assento-nome">${esc(nameOf(p, v))}${badges(p, v)}</div>
         <div class="g-mao-op">${v.hands[p].map(x => slotHtml(v, p, x, false, mode)).join('') || '<span class="nota">Sem cartas</span>'}</div>
-        ${v.phase === 'over' ? `<div class="assento-dados">${v.result.scores[p]} pontos</div>` : off ? '<div class="assento-dados">Sem ligação</div>' : ''}
+        ${v.phase === 'over' && ui.revealEnd <= Date.now() ? `<div class="assento-dados">${v.result.scores[p]} pontos</div>` : off ? '<div class="assento-dados">Sem ligação</div>' : ''}
       </div>`;
     }
 
@@ -177,6 +210,14 @@
       const draftFocus = !!draft && document.activeElement === draft;
       const top = v.discardTop;
       const holder = v.holding;
+      if (v.phase === 'over') computeRevealOrder(v);
+      // Cartas trocadas ou mudadas de lugar: guarda onde estavam para as fazer deslizar até ao sítio novo.
+      const from = {};
+      if (!reducedMotion()) for (const id of ui.flip) {
+        const el = document.querySelector(`.g-slot[data-id="${id}"]`);
+        if (el) from[id] = el.getBoundingClientRect();
+      }
+      ui.flip = new Set();
       P.app.innerHTML = `<div class="jogo tabuas g-jogo">
         <div class="barra">
           <span class="info">Gringo${v.final ? '. Última volta' : ''}</span>
@@ -188,7 +229,9 @@
           <div class="jogo-main">
             <div class="oponentes g-op">${others(v).map(p => seatHtml(p, v, mode)).join('')}</div>
             <div class="g-centro">
-              <div class="g-pilha"><span class="card costas"></span><span>Baralho: ${v.deckCount}</span></div>
+              ${mode === 'start'
+                ? `<button class="g-pilha g-baralho pode" data-act="g-draw" aria-label="Comprar uma carta do baralho"><span class="card costas"></span><span>Toca para comprar</span></button>`
+                : `<div class="g-pilha g-baralho"><span class="card costas"></span><span>Baralho: ${v.deckCount}</span></div>`}
               <div class="g-pilha g-lixo">${top ? card(top) : '<span class="g-vazio"></span>'}<span>Lixo${v.snapOpen ? ' <b class="g-aberta">aberta</b>' : ''}</span></div>
               ${v.drawn ? `<div class="g-pilha g-comprada">${card(v.drawn)}<span>A tua compra</span></div>`
                 : holder !== null ? `<div class="g-pilha g-comprada g-outro"><span class="card costas"></span><span>${esc(nameOf(holder, v))} a pensar</span></div>` : ''}
@@ -207,6 +250,7 @@
       </div><div class="historico-fundo" id="historico-fundo" data-act="toggle-log"></div><div id="sobre"></div>`;
       paintLog(v);
       paintOverlay(v);
+      slide(from);
       if (draftVal !== null) { const n = document.getElementById('chat-txt'); if (n) { n.value = draftVal; if (draftFocus) n.focus(); } }
       const lista = document.getElementById('historico-lista');
       lista.addEventListener('scroll', () => { ui.logStick = lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 12; });
@@ -223,6 +267,32 @@
         if (!el) { clearInterval(ui.countdown); return; }
         el.textContent = Math.max(0, Math.ceil((v.lastChanceAt + GR.LAST_CHANCE_MS - P.serverNow()) / 1000)) + ' s';
       }, 200);
+    }
+
+    // Uma cópia da carta voa por cima de tudo, do sítio antigo para o novo; a carta verdadeira aparece quando ela chega.
+    const slotEl = id => document.querySelector(`.g-slot[data-id="${id}"]`);
+    function slide(from) {
+      for (const id in ui.ghosts) { const el = slotEl(id); if (el) el.style.visibility = 'hidden'; }
+      for (const id in from) {
+        const el = slotEl(id);
+        if (!el || !el.animate || ui.ghosts[id]) continue;
+        const a = from[id], b = el.getBoundingClientRect();
+        const dx = a.left - b.left, dy = a.top - b.top, sc = a.width / (b.width || 1);
+        if (Math.abs(dx) < 3 && Math.abs(dy) < 3 && Math.abs(sc - 1) < 0.02) continue;
+        const g = el.cloneNode(true);
+        g.removeAttribute('data-act'); g.removeAttribute('id'); g.setAttribute('aria-hidden', 'true'); g.tabIndex = -1;
+        g.classList.add('g-fantasma');
+        Object.assign(g.style, { left: b.left + 'px', top: b.top + 'px', width: b.width + 'px', height: b.height + 'px' });
+        g.style.setProperty('--w', b.width + 'px');
+        document.body.appendChild(g);
+        el.style.visibility = 'hidden';
+        ui.ghosts[id] = g;
+        g.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${sc})` }, { transform: 'translate(0, -14px) scale(1.06)', offset: 0.7 }, { transform: 'none' }],
+          { duration: 900, easing: 'ease-in-out' }).onfinish = () => {
+          g.remove(); delete ui.ghosts[id];
+          const cur = slotEl(id); if (cur) cur.style.visibility = '';
+        };
+      }
     }
 
     function statusLine(v, mode) {
@@ -255,7 +325,7 @@
           parts.push(`<p>À espera dos outros: ${v.ready.filter(Boolean).length} de ${v.ready.length} prontos.</p>`);
           break;
         case 'start':
-          parts.push(`<p>É a tua vez.${clock()}</p>`, btn('g-draw', 'Comprar', { prim: true }));
+          parts.push(`<p>É a tua vez: toca no baralho para comprar${v.final ? '' : ', ou diz Gringo'}.${clock()}</p>`);
           if (!v.final) parts.push(btn('g-gringo', 'Gringo!'));
           break;
         case 'drawn':
@@ -331,7 +401,7 @@
       const box = document.getElementById('sobre');
       if (!box) return;
       let html = P.baseOverlay();
-      if (!html && v.phase === 'over') {
+      if (!html && v.phase === 'over' && ui.revealEnd <= Date.now()) {
         const R = v.result.ranking;
         const winners = R.filter(x => x.place === 1).flatMap(x => x.seats);
         const iWon = winners.includes(v.me);
@@ -366,7 +436,16 @@
       switch (act) {
         case 'g-pick': {
           const seat = +t.dataset.seat, id = t.dataset.id;
-          const pk = picking(modeOf(v));
+          const mode = modeOf(v);
+          const pk = picking(mode);
+          // Dois toques seguidos numa carta tua: Jogada Rápida.
+          const now = Date.now(), last = ui.lastTap;
+          ui.lastTap = { id, at: now };
+          if (last && last.id === id && now - last.at < 420 && seat === v.me && canSnap(v) && mode !== 'prep-pick') {
+            ui.lastTap = null;
+            play({ type: 'snap', slot: id });
+            return true;
+          }
           const i = ui.sel.findIndex(s => s.id === id);
           if (i >= 0) ui.sel.splice(i, 1);
           else {

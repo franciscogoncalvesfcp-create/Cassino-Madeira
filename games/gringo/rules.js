@@ -13,6 +13,7 @@
   ALL_CARDS.push('JK1', 'JK2'); // dois Jokers
   const HAND_SIZE = 4;
   const LAST_CHANCE_MS = 3000;
+  const SNAP_PAUSE_MS = 1500; // pausa dos bots antes de comprar, para os outros poderem fazer Jogada Rápida
   const MIN_PLAYERS = 2, MAX_PLAYERS = 8;
 
   const rankOf = c => (c.startsWith('JK') ? 'JK' : c.slice(0, -1));
@@ -203,7 +204,7 @@
         if (seat !== s.turn) return fail('Não é a tua vez.');
         if (s.step !== 'start') return fail('Já compraste nesta vez.');
         if (s.powers.length) return fail('Espera que os poderes acabem de ser usados.');
-        s.snapOpen = false; s.snapTaken = false; // jogar fecha a Jogada Rápida sobre a carta anterior
+        // Comprar não fecha a Jogada Rápida: fecha quando cair outra carta no lixo.
         const card = takeFromDeck(s, ctx.rng);
         if (!card) { event(s, { t: 'noCards', seat }); s.step = 'placed'; return { ok: true }; }
         s.drawn = card; s.seen[seat][card] = true;
@@ -217,7 +218,6 @@
         if (s.step !== 'start') return fail('Gringo só se diz no início da tua vez.');
         if (s.powers.length) return fail('Espera que os poderes acabem de ser usados.');
         if (s.final) return fail('Alguém já disse Gringo.');
-        s.snapOpen = false; s.snapTaken = false;
         startFinal(s, seat, false, false);
         s.step = 'placed';
         return { ok: true };
@@ -368,6 +368,8 @@
     if (s.phase === 'play') {
       if (s.step === 'drawn') return [{ seat: s.turn, kind: 'turn' }];
       if (s.powers.length) return [{ seat: s.powers[0].seat, kind: 'turn' }];
+      // Acabou de cair uma carta no lixo: o seguinte espera um pouco antes de comprar (só conta para os bots).
+      if (s.step === 'start' && s.snapOpen) return [{ seat: s.turn, kind: 'turn', delayMs: SNAP_PAUSE_MS }];
       return [{ seat: s.turn, kind: 'turn' }];
     }
     if (s.phase === 'lastChance' && s.powers.length) return [{ seat: s.powers[0].seat, kind: 'turn' }];

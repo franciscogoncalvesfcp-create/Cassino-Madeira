@@ -41,7 +41,7 @@ test('o bot nunca faz Jogada Rápida com uma carta que não conhece', () => {
   s.memory[1][s.hands[1][0].id] = '7H';
   const r = M.bots.react('normal', M.bots.view(s, 1), seeded(1));
   assert.deepStrictEqual(r.action, { type: 'snap', slot: s.hands[1][0].id });
-  assert.ok(r.delayMs >= 800 && r.delayMs < 1800);
+  assert.ok(r.delayMs >= 1500 && r.delayMs < 3000);
 });
 
 test('o bot não vê as cartas escondidas: decide igual, sejam elas quais forem', () => {

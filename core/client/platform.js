@@ -233,7 +233,7 @@
     const busy = Math.max(0, (this.game.busyUntil ? this.game.busyUntil() : 0) - now);
     const speed = SPEEDS[prefs.speed] || 1150;
     const due = [];
-    for (const w of mod.waitingFor(s, now)) if (w.seat !== 0) due.push({ at: now + speed + busy, run: () => this.botChoose(w.seat) });
+    for (const w of mod.waitingFor(s, now)) if (w.seat !== 0) due.push({ at: now + speed + busy + (w.delayMs || 0), run: () => this.botChoose(w.seat) });
     // Bots que querem jogar fora da vez (ex.: Jogada Rápida no Gringo).
     for (let p = 1; p < this.names.length; p++) {
       const r = mod.bots.react(this.level, mod.bots.view(s, p), Math.random);

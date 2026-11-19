@@ -125,12 +125,24 @@ test('Jogada Rápida errada: a carta mostra-se e volta, e leva uma carta extra s
   assert.ok(s.snapOpen, 'continua aberta para os outros');
 });
 
-test('a janela fecha quando o jogador seguinte joga; Gringo também conta como jogar', () => {
-  const s = game([['7S', '3S', '4S', '5S'], ['2H', '3H', '4H', '5H']], { deck: ['9D', '8C', '7C'] });
-  ok(s, 0, { type: 'draw' }); ok(s, 0, { type: 'discardDrawn' });
+test('a janela continua aberta enquanto o seguinte tem a carta comprada; fecha quando cai outra carta', () => {
+  const s = game([['7S', '3S', '4S', '5S'], ['2H', '3H', '4H', '5H'], ['7D', '2D', '3D', '4D']], { deck: ['9D', '8C', '7C'] });
+  ok(s, 0, { type: 'draw' }); ok(s, 0, { type: 'discardDrawn' }); // 7C no lixo
   ok(s, 1, { type: 'draw' });
-  no(s, 0, { type: 'snap', slot: s.hands[0][0].id });
-  assert.strictEqual(s.hands[0].length, 4, 'recusada, sem castigo');
+  assert.ok(G.publicView(s, 2).snapOpen, 'ainda aberta depois de o seguinte comprar');
+  ok(s, 2, { type: 'snap', slot: s.hands[2][0].id }); // 7D por cima do 7C
+  assert.strictEqual(s.hands[2].length, 3);
+  ok(s, 1, { type: 'discardDrawn' }); // 8C: agora conta esta carta
+  const fail = s.hands[0][0];
+  ok(s, 0, { type: 'snap', slot: fail.id }); // 7S sobre 8C: errada
+  assert.strictEqual(s.events[s.events.length - 1].t, 'snapFail');
+});
+
+test('o bot seguinte espera um pouco antes de comprar quando acabou de cair uma carta', () => {
+  const s = game([['7S', '3S'], ['2H', '3H']], { deck: ['9D', '8C', '7C'] });
+  assert.ok(!G.waitingFor(s)[0].delayMs, 'no início ainda não caiu nada');
+  ok(s, 0, { type: 'draw' }); ok(s, 0, { type: 'discardDrawn' });
+  assert.ok(G.waitingFor(s)[0].delayMs > 0);
 });
 
 test('figuras: conta a figura, não a cor; Joker sobre Joker', () => {

@@ -384,7 +384,7 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
 .g-op { flex-wrap: wrap; overflow-y: auto; max-height: 42vh; }
 .g-assento { flex: 0 1 auto; }
 .g-mao-op { display: flex; flex-wrap: wrap; gap: 4px; --w: clamp(30px, 6.5vw, 42px); }
-.g-slot { position: relative; padding: 0; border: 0; background: none; border-radius: 6px; display: block; color: inherit; transition: transform calc(120ms * var(--speed)); }
+.g-slot { position: relative; padding: 0; border: 0; background: none; border-radius: 6px; display: block; color: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform calc(120ms * var(--speed)); }
 .g-slot:disabled { cursor: default; }
 .g-slot:hover:not(:disabled):not(.sel) { transform: translateY(-3px); }
 .g-slot.sel { transform: translateY(-8px); }
@@ -430,4 +430,18 @@ body[data-back="losangos"] .card.costas { background: repeating-linear-gradient(
   .g-mao { min-height: 0; padding-block: 8px 6px; }
   .g-pilha { --w: 40px; }
 }
-@media (prefers-reduced-motion: reduce) { .g-slot.g-troca .card, .g-flash { animation: none; } }
+.g-baralho { border: 0; background: none; padding: 0; color: inherit; font: inherit; }
+button.g-baralho { cursor: pointer; touch-action: manipulation; }
+.g-baralho.pode .card { box-shadow: 0 0 0 3px var(--sinal), 0 8px 16px rgba(0,0,0,.45); animation: g-chama calc(1600ms * var(--speed)) ease-in-out infinite; }
+.g-baralho.pode span:last-child { color: var(--sinal); font-weight: 700; }
+button.g-baralho:hover .card, button.g-baralho:focus-visible .card { transform: translateY(-4px); }
+@keyframes g-chama { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.g-fantasma { position: fixed; z-index: 45; margin: 0; pointer-events: none; transform-origin: 0 0; filter: drop-shadow(0 10px 14px rgba(0,0,0,.5)); }
+.g-fantasma.sel { transform: none; }
+.g-fantasma .card { animation: none !important; box-shadow: 0 0 0 3px var(--cal), 0 2px 5px rgba(0,0,0,.4); }
+.g-vira { position: relative; display: block; perspective: 600px; }
+.g-vira > .card:first-child { animation: g-sai 220ms ease-in both; animation-delay: var(--d); }
+.g-vira > .card + .card { position: absolute; inset: 0; animation: g-entra 280ms ease-out both; animation-delay: calc(var(--d) + 220ms); }
+@keyframes g-sai { from { transform: rotateY(0); } to { transform: rotateY(90deg); visibility: hidden; } }
+@keyframes g-entra { from { transform: rotateY(-90deg); } to { transform: rotateY(0); } }
+@media (prefers-reduced-motion: reduce) { .g-slot.g-troca .card, .g-flash, .g-baralho.pode .card { animation: none; } }
