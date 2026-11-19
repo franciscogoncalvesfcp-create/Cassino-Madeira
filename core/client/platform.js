@@ -473,6 +473,7 @@
       case 'clear-save': save('save', null); renderSettings(); break;
       case 'opt': handleOption(t); break;
       case 'start-offline': startOffline(); break;
+      case 'next-round': if (session) session.next(); break;
       case 'again': { const prev = session; startLocal(prev.game, prev.state.config, prev.level, prev.names); break; }
       case 'back-lobby': session.action('lobby'); break;
       case 'quit':
