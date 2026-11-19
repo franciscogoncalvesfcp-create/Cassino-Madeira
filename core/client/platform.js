@@ -541,6 +541,7 @@
       case 'clear-save': save('save', null); renderSettings(); break;
       case 'opt': handleOption(t); break;
       case 'start-offline': startOffline(); break;
+      case 'next-round': if (session) session.next(); break;
       case 'again': {
         const prev = session, mod = prev.mod;
         const starter = mod.over(prev.state) && mod.nextStarter ? mod.nextStarter(mod.result(prev.state), prev.state.config) : undefined;
